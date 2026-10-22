@@ -1,0 +1,6 @@
+degree: bachelors
+graduation_date: 2027-05
+locations: [Bay Area, Los Angeles, Remote]
+tracks: [new_grad, summer_2027]
+target_role_types: [swe, ml_ai, data_engineer, frontend_fullstack]
+excluded_role_types: [data_scientist]
