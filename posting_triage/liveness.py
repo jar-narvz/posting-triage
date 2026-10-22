@@ -9,6 +9,7 @@ API docs (checked Oct 2026):
 
 import re
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlsplit
 
 
@@ -59,3 +60,45 @@ UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 def is_uuid(text):
     return bool(UUID.match(text))
+
+
+BLOCK_TAGS = {
+    "p", "div", "br", "ul", "ol", "li", "tr", "table", "section", "article",
+    "header", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote",
+}
+SKIP_TAGS = {"script", "style", "noscript"}
+
+
+class _TextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)  # &amp; -> &, &nbsp; -> \xa0
+        self.parts = []
+        self.skipping = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in SKIP_TAGS:
+            self.skipping += 1
+        elif tag == "li":
+            self.parts.append("\n- ")
+        elif tag in BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag in SKIP_TAGS:
+            self.skipping = max(0, self.skipping - 1)
+        elif tag in BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if not self.skipping:
+            self.parts.append(data)
+
+
+def html_to_text(markup):
+    """Plain text from posting HTML: one line per block, bullets kept as "- ",
+    runs of spaces collapsed, no blank lines."""
+    parser = _TextExtractor()
+    parser.feed(markup)
+    parser.close()
+    lines = (" ".join(line.split()) for line in "".join(parser.parts).splitlines())
+    return "\n".join(line for line in lines if line not in ("", "-"))

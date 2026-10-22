@@ -1,6 +1,6 @@
 import pytest
 
-from posting_triage.liveness import BoardJob, board_job
+from posting_triage.liveness import BoardJob, board_job, html_to_text
 
 UUID = "3d182b7f-482e-45b2-8668-f04f0b5fda8e"
 
@@ -58,3 +58,25 @@ def test_every_board_url_in_candidates_parses():
     ]
     assert board_hosted, "expected some board-hosted URLs in the sample"
     assert [u for u in board_hosted if board_job(u) is None] == []
+
+
+def test_html_to_text_keeps_structure():
+    markup = (
+        "<h2>About the role</h2><p>Build things&nbsp;at   scale.</p>"
+        "<ul><li>BS in CS</li><li>2+ years <strong>preferred</strong></li></ul>"
+        "<p>Pay &amp; benefits</p>"
+    )
+    assert html_to_text(markup) == (
+        "About the role\nBuild things at scale.\n- BS in CS\n- 2+ years preferred\nPay & benefits"
+    )
+
+
+def test_html_to_text_drops_scripts_and_styles():
+    markup = "<style>p{color:red}</style><p>Visible</p><script>var x = '<p>no</p>';</script>"
+    assert html_to_text(markup) == "Visible"
+
+
+def test_html_to_text_handles_br_and_plain_text():
+    assert html_to_text("Line one<br>Line two<br/>Line three") == "Line one\nLine two\nLine three"
+    assert html_to_text("no tags at all") == "no tags at all"
+    assert html_to_text("") == ""
