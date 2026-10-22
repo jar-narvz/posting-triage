@@ -1,0 +1,12 @@
+# secrets and personal data
+.env
+profile.yaml
+
+# cached posting text (never committed)
+data/cache/
+
+# python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
