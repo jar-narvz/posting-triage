@@ -201,3 +201,11 @@ def test_cached_text_is_shown_and_dead_postings_are_auto_skipped(tmp_path):
     assert labels_in(skips) == [{"id": "c0", "url": "https://x.example/0", "reason": "dead (HTTP 404)"}]
     assert io.paged == ["Backend Engineer I\n2+ years preferred"]
     assert any("cached ok via lever, 37 chars" in line for line in io.output)
+
+
+def test_off_season_posting_is_labeled_other_track_and_skipped_on_track(tmp_path):
+    labels, skips = tmp_path / "labels.csv", tmp_path / "skips.csv"
+    keys = ["o", "i", "-", "-", "-", "San Francisco, CA", "n", "s", "s", "k", "Fall 2026 only", "Q"]
+    run_session(CANDIDATES, ScriptedIO(*keys), labels, skips, tmp_path, now=NOW)
+    row = labels_in(labels)[0]
+    assert (row["track"], row["gold_verdict"], row["deciding_field"]) == ("other", "skip", "track")

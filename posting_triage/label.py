@@ -138,6 +138,7 @@ STRENGTH = [("r", "required", "required"), ("p", "preferred", "preferred")]
 DECIDING_FIELDS = [
     ("v", "liveness", "couldn't verify"),
     ("t", "role_type", "role type"),
+    ("k", "track", "track"),
     ("d", "degree", "degree"),
     ("l", "role_level", "level"),
     ("e", "experience", "experience"),
@@ -191,7 +192,7 @@ def steps():
     return [
         ("track", lambda p, a: p.choose("Track", [
             ("n", "new_grad", "new grad"), ("s", "summer_2027", "summer 2027"),
-            ("c", "spring_coop", "spring co-op")]), always),
+            ("c", "spring_coop", "spring co-op"), ("o", "other", "other term")]), always),
         ("role_level", lambda p, a: p.choose("Role level", [
             ("i", "intern", "intern"), ("g", "new_grad", "new grad"), ("e", "entry", "entry"),
             ("m", "mid", "mid"), ("s", "senior", "senior"), ("u", "unclear", "unclear")]), always),
