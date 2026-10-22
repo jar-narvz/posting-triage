@@ -1,6 +1,6 @@
 import pytest
 
-from posting_triage.liveness import BoardJob, board_job, html_to_text
+from posting_triage.liveness import BoardJob, PostingText, board_job, fetch_from_board, html_to_text
 
 UUID = "3d182b7f-482e-45b2-8668-f04f0b5fda8e"
 
@@ -80,3 +80,94 @@ def test_html_to_text_handles_br_and_plain_text():
     assert html_to_text("Line one<br>Line two<br/>Line three") == "Line one\nLine two\nLine three"
     assert html_to_text("no tags at all") == "no tags at all"
     assert html_to_text("") == ""
+
+
+def fake_get(responses):
+    """Stand-in for get_json: maps URL -> (status, body) and records calls."""
+    calls = []
+
+    def get(url):
+        calls.append(url)
+        return responses.get(url, (404, None))
+
+    get.calls = calls
+    return get
+
+
+GH_URL = "https://boards-api.greenhouse.io/v1/boards/acme/jobs/123"
+
+
+def test_greenhouse_unescapes_content():
+    get = fake_get({GH_URL: (200, {
+        "title": "Software Engineer, New Grad",
+        "location": {"name": "San Francisco, CA"},
+        "content": "&lt;p&gt;Build &amp;amp; ship.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;BS in CS&lt;/li&gt;&lt;/ul&gt;",
+    })})
+    result = fetch_from_board(BoardJob("greenhouse", "acme", "123"), get)
+    assert result == PostingText(
+        "ok", "greenhouse", "Software Engineer, New Grad\nSan Francisco, CA\nBuild & ship.\n- BS in CS"
+    )
+    assert get.calls == [GH_URL]
+
+
+def test_lever_includes_lists_and_eu_host():
+    url = f"https://api.eu.lever.co/v0/postings/acme/{UUID}"
+    get = fake_get({url: (200, {
+        "text": "Backend Engineer I",
+        "categories": {"location": "Remote", "allLocations": ["Remote", "Austin, TX"]},
+        "description": "<div>We build tools.</div>",
+        "lists": [{"text": "Requirements", "content": "<li>2+ years preferred</li>"}],
+        "additional": "<p>Equal opportunity.</p>",
+    })})
+    result = fetch_from_board(BoardJob("lever", "acme", UUID, eu=True), get)
+    assert result.status == "ok"
+    assert result.text == (
+        "Backend Engineer I\nRemote; Austin, TX\nWe build tools.\n"
+        "Requirements\n- 2+ years preferred\nEqual opportunity."
+    )
+
+
+def test_ashby_finds_the_job_on_the_board():
+    url = "https://api.ashbyhq.com/posting-api/job-board/zeta"
+    get = fake_get({url: (200, {"jobs": [
+        {"title": "Other job", "jobUrl": "https://jobs.ashbyhq.com/zeta/aaaa"},
+        {
+            "title": "ML Engineer",
+            "location": "New York, NY",
+            "secondaryLocations": [{"location": "Remote"}],
+            "descriptionHtml": "<p>PhD preferred.</p>",
+            "jobUrl": f"https://jobs.ashbyhq.com/zeta/{UUID}",
+        },
+    ]})})
+    result = fetch_from_board(BoardJob("ashby", "zeta", UUID), get)
+    assert result == PostingText("ok", "ashby", "ML Engineer\nNew York, NY; Remote\nPhD preferred.")
+
+
+def test_ashby_job_missing_from_board_is_not_found():
+    url = "https://api.ashbyhq.com/posting-api/job-board/zeta"
+    get = fake_get({url: (200, {"jobs": [{"title": "Other", "jobUrl": "https://jobs.ashbyhq.com/zeta/aaaa"}]})})
+    assert fetch_from_board(BoardJob("ashby", "zeta", UUID), get) == PostingText(
+        "not_found", "ashby", detail="not on board"
+    )
+
+
+@pytest.mark.parametrize(
+    "job",
+    [BoardJob("greenhouse", "acme", "123"), BoardJob("lever", "acme", UUID), BoardJob("ashby", "acme", UUID)],
+)
+def test_404_is_not_found(job):
+    assert fetch_from_board(job, fake_get({})).status == "not_found"
+
+
+@pytest.mark.parametrize("status", [0, 500, 429])
+def test_other_failures_are_unreadable_not_dead(status):
+    # A server error or no network says nothing about whether the posting is live.
+    get = lambda url: (status, None)  # noqa: E731
+    result = fetch_from_board(BoardJob("greenhouse", "acme", "123"), get)
+    assert result == PostingText("unreadable", "greenhouse", detail=f"HTTP {status}")
+
+
+@pytest.mark.network
+def test_real_greenhouse_404():
+    result = fetch_from_board(BoardJob("greenhouse", "not-a-real-board-xyz", "1"))
+    assert result.status == "not_found"
