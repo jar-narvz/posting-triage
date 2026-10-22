@@ -9,6 +9,9 @@ from posting_triage.label import (
     Prompter,
     Quit,
     SkipPosting,
+    guess_locations,
+    guess_remote,
+    guess_track,
     parse_locations,
     parse_window,
     parse_years,
@@ -199,8 +202,67 @@ def test_cached_text_is_shown_and_dead_postings_are_auto_skipped(tmp_path):
     io = ScriptedIO("Q")
     run_session(CANDIDATES, io, labels, skips, cache, now=NOW)
     assert labels_in(skips) == [{"id": "c0", "url": "https://x.example/0", "reason": "dead (HTTP 404)"}]
-    assert io.paged == ["Backend Engineer I\n2+ years preferred"]
+    assert io.paged == []  # full text only on T
+    assert "2+ years preferred" in io.output  # the excerpt, shown inline (title is in the header)
     assert any("cached ok via lever, 37 chars" in line for line in io.output)
+
+
+def test_unreadable_postings_are_auto_skipped(tmp_path):
+    labels, skips = tmp_path / "labels.csv", tmp_path / "skips.csv"
+    save("c0", "https://x.example/0", PostingText("unreadable", "browser", "403 Forbidden", "HTTP 403"), tmp_path)
+    run_session(CANDIDATES, ScriptedIO("Q"), labels, skips, tmp_path, now=NOW)
+    assert labels_in(skips)[0]["reason"] == "unreadable (HTTP 403)"
+
+
+def test_t_shows_the_full_text_in_the_pager(tmp_path):
+    save("c0", "https://x.example/0", PostingText("ok", "lever", "Full posting text"), tmp_path)
+    io = ScriptedIO("T", "Q")
+    run_session(CANDIDATES, io, tmp_path / "l.csv", tmp_path / "s.csv", tmp_path, now=NOW)
+    assert io.paged == ["Full posting text"]
+
+
+def test_enter_accepts_prefilled_track_locations_and_remote(tmp_path):
+    labels, skips = tmp_path / "labels.csv", tmp_path / "skips.csv"
+    candidate = {"id": "p1", "url": "https://x/1", "company": "Co", "title": "SWE Intern - Summer 2027",
+                 "location": "SF; Remote in USA +2", "tags": "", "source": "simplify-intern"}
+    # Enter for track, then level..window, Enter for locations, Enter for remote, then the rest.
+    keys = ["\n", "i", "-", "-", "-", "", "\n", "s", "a", "", "Q"]
+    io = ScriptedIO(*keys)
+    run_session([candidate], io, labels, skips, tmp_path, now=NOW)
+    row = labels_in(labels)[0]
+    assert (row["track"], row["locations"], row["remote"]) == (
+        "summer_2027", "San Francisco, CA; Remote in USA", "true")
+    assert any("(Enter = summer 2027)" in line for line in io.output)
+    assert "Locations (separate with ;  or - if none) [San Francisco, CA; Remote in USA]: " in io.output
+
+
+def test_enter_without_a_default_asks_again():
+    io = ScriptedIO("\n", "i")
+    assert Prompter(io, "https://x").choose("Role level", LEVELS) == "intern"
+
+
+@pytest.mark.parametrize(
+    "title, source, track",
+    [
+        ("Software Engineer Intern - Summer 2027", "speedyapply-intern", "summer_2027"),
+        ("Field Engineering Intern - Fall 2026 / Spring 2027", "simplify-intern", "spring_coop"),
+        ("Fullstack Internship - Fall 2026 & Winter 2027", "simplify-intern", "other"),
+        ("Part time Software Engineer Co-op - Remote", "simplify-newgrad", "other"),
+        ("Software Engineering Co-op", "simplify-newgrad", None),
+        ("Software Engineer, New Grad", "simplify-newgrad", "new_grad"),
+        ("Software Engineer Intern", "simplify-intern", "summer_2027"),
+    ],
+)
+def test_guess_track(title, source, track):
+    assert guess_track({"title": title, "source": source}) == track
+
+
+def test_guess_locations_and_remote():
+    assert guess_locations({"location": "SF; NYC; Austin, TX"}) == "San Francisco, CA; New York, NY; Austin, TX"
+    assert guess_locations({"location": "Menlo Park, CA +2"}) == "Menlo Park, CA"
+    assert guess_locations({"location": ""}) is None
+    assert guess_remote({"location": "Remote - San Francisco, CA"}) == "true"
+    assert guess_remote({"location": "Austin, TX"}) == "false"
 
 
 def test_off_season_posting_is_labeled_other_track_and_skipped_on_track(tmp_path):

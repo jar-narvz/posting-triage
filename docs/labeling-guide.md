@@ -19,7 +19,7 @@ Two more rules:
   excluded_role_types: [data_scientist]
   ```
 
-- **Read the cached text, not the live page.** The pipeline will see exactly the cached text, so that's what you label. The cached text opens in a pager when each posting starts; press `T` to see it again. Use `O` (open in browser) only when the cached text is missing.
+- **Read the cached text, not the live page.** The pipeline will see exactly the cached text, so that's what you label. Each posting starts with an excerpt of the cached text (the requirements section plus any line about degrees, years, graduation, or remote), with deciding words highlighted. Press `T` for the full text whenever the excerpt isn't enough. Use `O` (open in browser) only when the cached text is missing.
 
 ## Workflow
 
@@ -54,7 +54,7 @@ Every example below is made up.
 | --- | --- |
 | `not_found` | Nothing. The labeler already auto-skipped it as dead. |
 | text that says the job is gone ("The page you are looking for doesn't exist", "This job is no longer available") | Press `S` (skip). |
-| `unreadable` (e.g. HTTP 403, the site blocks automated browsers) | Press `S` (skip). |
+| `unreadable` (e.g. HTTP 403, the site blocks automated browsers) | Nothing. The labeler auto-skips it too. |
 
 Skipped postings are left out of the eval. The eval measures how well each approach *reads* a posting; liveness has its own unit tests.
 
@@ -242,6 +242,8 @@ The order matches what `triage label` asks:
 | Notes | free text, or Enter | write one for every hard case |
 
 Controls at any question: `O` open in browser · `T` show text again · `B` back · `S` skip posting · `Q` quit.
+
+**Prefilled answers.** Track, locations, and remote come prefilled from the candidate list; press **Enter** to accept, or answer normally to change them. Check them against the posting: the lists sometimes shorten locations ("Menlo Park, CA +2" means two more not shown). Judgment fields (level, degree, experience, graduation, role type, verdict) are never prefilled, so your labels stay independent of any rule the tools use.
 
 ## Hard-case checklist (aim for 15+)
 
