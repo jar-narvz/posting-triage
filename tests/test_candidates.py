@@ -164,3 +164,20 @@ SOURCE_FILES = {
     "speedyapply-newgrad": "NEW_GRAD_USA.md",
     "speedyapply-intern": "2027-SWE-College-Jobs/HEAD/README.md",
 }
+
+
+def test_collect_dedups_one_board_job_with_two_urls():
+    job = "https://jobs.ashbyhq.com/acme/3d182b7f-482e-45b2-8668-f04f0b5fda8e"
+    simplify = (
+        "## 💻 Software Engineering New Grad Roles\n<table><tbody><tr>"
+        "<td><strong>Acme</strong></td><td>SWE New Grad</td><td>SF</td>"
+        f'<td><a href="{job}/application?embed=true&utm_source=Simplify">Apply</a></td><td>0d</td>'
+        "</tr></tbody></table>\n"
+    )
+    speedy = (
+        "### Other\n| Company | Position | Location | Posting | Age |\n|---|---|---|---|---|\n"
+        f'| <strong>Acme</strong> | SWE New Grad | SF | <a href="{job}">Apply</a> | 0d |\n'
+    )
+    rows = collect({"simplify-newgrad": simplify, "speedyapply-newgrad": speedy})
+    assert len(rows) == 1
+    assert rows[0]["source"] == "simplify-newgrad"

@@ -12,6 +12,8 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from posting_triage.liveness import board_job
+
 RAW = "https://raw.githubusercontent.com"
 SOURCES = {
     "simplify-newgrad": (f"{RAW}/SimplifyJobs/New-Grad-Positions/HEAD/README.md", "new_grad"),
@@ -164,6 +166,12 @@ def posting_id(url):
     return hashlib.sha1(url.encode()).hexdigest()[:10]
 
 
+def same_posting_key(url):
+    """Two URLs for one board job (e.g. Ashby's .../{id} and .../{id}/application) share a key."""
+    job = board_job(url)
+    return (job.board, job.token.lower(), job.job_id) if job else url
+
+
 def collect(texts):
     """texts: {source: README text}. Returns deduped US rows with ids, in a stable order."""
     seen = {}
@@ -173,7 +181,7 @@ def collect(texts):
             if source.startswith("simplify") and not is_us_location(row["location"]):
                 continue
             row["id"] = posting_id(row["url"])
-            seen.setdefault(row["id"], row)  # first source wins on duplicates
+            seen.setdefault(same_posting_key(row["url"]), row)  # first source wins on duplicates
     return sorted(seen.values(), key=lambda r: r["id"])
 
 
