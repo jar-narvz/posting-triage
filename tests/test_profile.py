@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from posting_triage.profile import Profile, ProfileError, load_profile, parse_profile
+from posting_triage.profile import Profile, ProfileError, load_profile, location_matches, parse_profile
 
 EXAMPLE = Path(__file__).parent.parent / "profile.example.yaml"
 
@@ -77,3 +77,49 @@ def test_invalid_yaml_is_reported(tmp_path):
     path.write_text("degree: [unclosed\n")
     with pytest.raises(ProfileError, match="not valid YAML"):
         load_profile(path)
+
+
+EXAMPLE_PLACES = ("Bay Area", "Los Angeles", "Remote")
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "Santa Clara, CA",
+        "SF",
+        "san jose, ca",
+        "San Jose, CA +2",
+        "Seattle, WA; San Jose, CA",  # one match is enough
+        "El Segundo, CA",
+        "Remote in USA",
+        "Remote (US)",
+        "San Francisco Bay Area",
+    ],
+)
+def test_places_in_a_profile_region_match(location):
+    assert location_matches(location, EXAMPLE_PLACES)
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "Seattle, WA",
+        "Irvine, CA",  # Orange County is not Los Angeles
+        "San Diego, CA",
+        "New York City, NY",
+        "Bellevue, WA; Austin, TX",
+        "",
+    ],
+)
+def test_places_outside_every_region_do_not_match(location):
+    assert not location_matches(location, EXAMPLE_PLACES)
+
+
+def test_a_profile_location_that_is_not_a_region_is_taken_as_a_city():
+    assert location_matches("Seattle, WA", ("Seattle, WA",))
+    assert location_matches("Seattle", ("seattle",))
+    assert not location_matches("Seattle, WA", ("Bay Area",))
+
+
+def test_remote_needs_the_word_not_a_substring():
+    assert not location_matches("Remotely Labs HQ, Boston, MA", ("Remote",))

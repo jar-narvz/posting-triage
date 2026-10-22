@@ -1,6 +1,7 @@
 """Load and validate profile.yaml."""
 
 import datetime
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +18,28 @@ FIELDS = (
     "target_role_types",
     "excluded_role_types",
 )
+
+# Profile locations name regions; postings name cities. These follow the labeling guide:
+# the nine-county SF Bay Area and Los Angeles County (Orange County is not LA).
+REGIONS = {
+    "bay area": {
+        "san francisco", "sf", "south san francisco", "daly city", "brisbane", "san bruno", "burlingame",
+        "san mateo", "foster city", "belmont", "san carlos", "redwood city", "redwood shores", "menlo park",
+        "palo alto", "east palo alto", "los altos", "mountain view", "sunnyvale", "santa clara", "cupertino",
+        "san jose", "milpitas", "campbell", "los gatos", "saratoga", "morgan hill", "half moon bay",
+        "oakland", "berkeley", "emeryville", "alameda", "richmond", "fremont", "newark", "union city",
+        "hayward", "san leandro", "pleasanton", "dublin", "livermore", "san ramon", "walnut creek",
+        "concord", "san rafael", "novato", "sausalito", "napa", "santa rosa", "petaluma", "vallejo",
+        "fairfield", "san francisco bay area", "bay area",
+    },
+    "los angeles": {
+        "los angeles", "la", "santa monica", "culver city", "pasadena", "burbank", "glendale", "el segundo",
+        "long beach", "torrance", "hawthorne", "inglewood", "beverly hills", "west hollywood", "playa vista",
+        "venice", "marina del rey", "manhattan beach", "redondo beach", "carson", "santa clarita",
+        "calabasas", "alhambra", "pomona", "rosemead", "irwindale", "monrovia", "downey", "woodland hills",
+        "sherman oaks", "van nuys", "north hollywood", "northridge", "chatsworth", "lancaster", "palmdale",
+    },
+}
 
 
 class ProfileError(ValueError):
@@ -71,6 +94,23 @@ def parse_profile(data):
         target_role_types=target,
         excluded_role_types=excluded,
     )
+
+
+def place_matches(place, wanted):
+    """True if one listed place ("Santa Clara, CA", "SF", "Remote in USA") falls in one
+    profile location: a region above, "Remote", or any other name, taken as a city."""
+    place = re.sub(r"\s*\+\d+$", "", place.strip()).lower()  # "San Jose, CA +2": the 2 others aren't shown
+    wanted = wanted.strip().lower()
+    if wanted == "remote":
+        return re.search(r"\bremote\b", place) is not None
+    city = place.split(",", 1)[0].strip()
+    return city in REGIONS.get(wanted, {wanted.split(",", 1)[0].strip()})
+
+
+def location_matches(location, profile_locations):
+    """True if any `;`-separated place in `location` matches any profile location."""
+    places = [p for p in location.split(";") if p.strip()]
+    return any(place_matches(p, w) for p in places for w in profile_locations)
 
 
 def parse_degree(value):
