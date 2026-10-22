@@ -43,6 +43,10 @@ class Terminal:
 
     def __init__(self):
         self.color = sys.stdout.isatty()  # highlight key terms only on a real terminal
+        try:
+            import readline  # noqa: F401  (arrow keys and line editing in input())
+        except ImportError:
+            pass
 
     def key(self):
         if not sys.stdin.isatty():
@@ -115,9 +119,9 @@ class Prompter:
             keys = " ".join(k for k, _, _ in options)
             self.io.show(f"  press one of: {keys}  ({CONTROL_HELP})")
 
-    def text(self, question, parse=str.strip, default=None):
+    def text(self, question, parse=str.strip, default=None, echo=None):
         """A typed answer. `parse` may raise ValueError to ask again.
-        With a default, an empty answer accepts it."""
+        With a default, an empty answer accepts it. `echo` shows how the answer was read."""
         prompt = f"{question} [{default}]: " if default is not None else f"{question}: "
         while True:
             answer = self.io.line(prompt)
@@ -126,9 +130,13 @@ class Prompter:
             if default is not None and not answer.strip():
                 answer = default
             try:
-                return parse(answer)
+                value = parse(answer)
             except ValueError as e:
                 self.io.show(f"  {e}")
+                continue
+            if echo:
+                self.io.show(f"  → {echo(value)}")
+            return value
 
     def _control(self, key):
         """Handle a control key. Returns True if the question should be asked again."""
@@ -178,20 +186,59 @@ def parse_years(answer):
     return f"{years:g}"
 
 
-MONTH = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+MONTH_NAMES = {name: i for i, name in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
+WINDOW_HELP = (
+    "type a start and end month, e.g. 2027-12 2028-08 (also 2028-8, 12/2027, Dec 2027 to Aug 2028); "
+    "one month alone means exactly that month; ? for an open end; - if the posting doesn't say"
+)
 
 
 def parse_window(answer):
-    """'-' (silent), or 'START END' as YYYY-MM, with '?' for an open end."""
-    parts = answer.split()
-    if parts == ["-"]:
+    """A graduation window as (start, end) YYYY-MM strings; "" is an open end.
+    Accepts the ways people write months; one month means start = end."""
+    text = re.sub(r"[\x00-\x1f\x7f]|\^\[\[?[A-D]?", " ", answer).strip().lower()  # stray key codes
+    if text == "-":
         return ("", "")
-    if len(parts) != 2 or not all(p == "?" or MONTH.match(p) for p in parts) or parts == ["?", "?"]:
-        raise ValueError("type START END as YYYY-MM (e.g. 2026-12 2027-08), ? for an open end, or -")
-    start, end = ("" if p == "?" else p for p in parts)
+    text = re.sub(r"\s(-|–|—|to|through|and)\s", " ", f" {text} ").replace(",", " ")
+    tokens, months = text.split(), []
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "?":
+            months.append("")
+        elif m := re.fullmatch(r"(\d{4})[-/](\d{1,2})", token):
+            months.append(month_string(m.group(1), m.group(2)))
+        elif m := re.fullmatch(r"(\d{1,2})/(\d{4})", token):
+            months.append(month_string(m.group(2), m.group(1)))
+        elif token[:3] in MONTH_NAMES and i + 1 < len(tokens) and re.fullmatch(r"\d{4}", tokens[i + 1]):
+            months.append(month_string(tokens[i + 1], MONTH_NAMES[token[:3]]))
+            i += 1
+        else:
+            raise ValueError(WINDOW_HELP)
+        i += 1
+    if len(months) == 1 and months[0]:
+        months = months * 2
+    if len(months) != 2 or months == ["", ""]:
+        raise ValueError(WINDOW_HELP)
+    start, end = months
     if start and end and start > end:
-        raise ValueError("start is after end")
+        raise ValueError(f"start {start} is after end {end}")
     return (start, end)
+
+
+def month_string(year, month):
+    month = int(month)
+    if not 1 <= month <= 12:
+        raise ValueError(f"{month} isn't a month. {WINDOW_HELP}")
+    return f"{year}-{month:02d}"
+
+
+def describe_window(window):
+    start, end = window
+    if not start and not end:
+        return "not stated"
+    return f"{start or '?'} to {end or '?'}"
 
 
 def parse_locations(answer):
@@ -261,7 +308,8 @@ def steps(candidate):
         ("experience_years", lambda p, a: p.text("Years of experience (number, or -)", parse_years), always),
         ("experience_strength", lambda p, a: p.choose("  Experience is", STRENGTH),
          lambda a: a["experience_years"] != ""),
-        ("grad_window", lambda p, a: p.text("Graduation window (START END as YYYY-MM, ? open, or -)", parse_window),
+        ("grad_window", lambda p, a: p.text("Graduation window (e.g. 2027-12 2028-08, ? open end, or -)",
+                                            parse_window, echo=describe_window),
          always),
         ("locations", lambda p, a: p.text("Locations (separate with ;  or - if none)", parse_locations,
                                            default=guess_locations(candidate)), always),

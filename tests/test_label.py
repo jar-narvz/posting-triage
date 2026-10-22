@@ -13,6 +13,7 @@ from posting_triage.label import (
     guess_remote,
     guess_track,
     parse_locations,
+    describe_window,
     parse_window,
     parse_years,
     run_session,
@@ -105,13 +106,24 @@ def test_parse_years_rejects(answer):
 
 @pytest.mark.parametrize(
     "answer, window",
-    [("-", ("", "")), ("2026-12 2027-08", ("2026-12", "2027-08")), ("? 2027-08", ("", "2027-08"))],
+    [
+        ("-", ("", "")),
+        ("2026-12 2027-08", ("2026-12", "2027-08")),
+        ("? 2027-08", ("", "2027-08")),
+        ("2027-12 2028-8", ("2027-12", "2028-08")),  # one-digit month
+        ("2027-12 - 2028-08", ("2027-12", "2028-08")),
+        ("12/2027 to 8/2028", ("2027-12", "2028-08")),
+        ("Dec 2027 - August 2028", ("2027-12", "2028-08")),
+        ("December 2027", ("2027-12", "2027-12")),  # one month = exactly that month
+        ("2027-12", ("2027-12", "2027-12")),
+        ("2027-12 ^[[ 2028-08", ("2027-12", "2028-08")),  # stray arrow-key code
+    ],
 )
 def test_parse_window(answer, window):
     assert parse_window(answer) == window
 
 
-@pytest.mark.parametrize("answer", ["2027-08", "Dec 2026 Aug 2027", "2027-08 2026-12", "? ?", "2027-13 2028-01"])
+@pytest.mark.parametrize("answer", ["2027-08 2026-12", "? ?", "?", "2027-13 2028-01", "next year", "2027", ""])
 def test_parse_window_rejects(answer):
     with pytest.raises(ValueError):
         parse_window(answer)
@@ -271,3 +283,11 @@ def test_off_season_posting_is_labeled_other_track_and_skipped_on_track(tmp_path
     run_session(CANDIDATES, ScriptedIO(*keys), labels, skips, tmp_path, now=NOW)
     row = labels_in(labels)[0]
     assert (row["track"], row["gold_verdict"], row["deciding_field"]) == ("other", "skip", "track")
+
+
+def test_window_answer_is_echoed_back():
+    io = ScriptedIO("Dec 2027 to Aug 2028")
+    assert Prompter(io, "https://x").text("Window", parse_window, echo=describe_window) == ("2027-12", "2028-08")
+    assert "  → 2027-12 to 2028-08" in io.output
+    assert describe_window(("", "2027-06")) == "? to 2027-06"
+    assert describe_window(("", "")) == "not stated"

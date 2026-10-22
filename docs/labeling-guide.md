@@ -198,6 +198,8 @@ Window `2027-12 2028-06`. The profile graduates 2027-05, outside the window → 
 | "must return to school after the internship" (summer 2027) | `2027-09 ?` |
 | nothing about graduation | `-` |
 
+Any common month format works: `2028-8`, `8/2028`, `Aug 2028`, and `Dec 2027 to Aug 2028`. One month by itself means exactly that month. The labeler repeats back how it read your answer (`→ 2027-12 to 2028-08`).
+
 **Hard case to watch for:** a Summer 2027 internship that requires returning to school. That's a graduation constraint even if no month is named, and it excludes a May 2027 graduate.
 
 ### Rule 8 — Location
