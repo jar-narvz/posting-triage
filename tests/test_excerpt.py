@@ -69,3 +69,24 @@ def test_section_stops_at_pay_and_benefits_boilerplate():
         "Medical, dental, vision.",
     ])
     assert excerpt(text).splitlines() == ["Minimum Qualifications:", "- Bachelor's degree in CS"]
+
+
+def test_weak_words_alone_do_not_pick_a_line():
+    text = "\n".join([
+        "To succeed, organizations must blend digital and human capabilities.",
+        "Enter Email address (Required)",
+        "3+ years of experience required",
+    ])
+    assert excerpt(text) == "3+ years of experience required"
+
+
+def test_pay_and_legal_lines_are_left_out_even_with_key_terms():
+    text = "\n".join([
+        "What You'll Bring",
+        "Currently pursuing a Masters degree or PhD.",
+        "The first year base compensation for this role is $155,000.",
+        "Dental coverage, including orthodontia.",
+        "Our hourly rates are based on your location, year in school, degree, and experience.",
+        "FOR U.S. APPLICANTS: we are an Equal Opportunity employer.",
+    ])
+    assert excerpt(text).splitlines() == ["What You'll Bring", "Currently pursuing a Masters degree or PhD."]

@@ -18,17 +18,27 @@ SECTION_HEADER = re.compile(
 SECTION_END = re.compile(
     r"^(benefits|perks|compensation|pay|salary|the (base )?(salary|pay)|【?for pay|job information|"
     r"what we offer|why (join|you'll love)|our (benefits|culture|values)|about (us|the (company|team))|"
-    r"equal (opportunity|employment)|eeo|for los angeles county|disclaimer|privacy|"
-    r"accommodations?|additional information)",
+    r"equal (opportunity|employment)|eeo|for los angeles county|for u\.?s\.? applicants|disclaimer|privacy|"
+    r"accommodations?|additional info\w*|the first year)",
     re.IGNORECASE,
 )
-# Words that decide a verdict. Matched case-insensitively.
+# Pay, benefits, and legal text anywhere in a line. Such lines never make the excerpt,
+# even when they mention "degree" or "years" (e.g. "pay varies by degree and experience").
+BOILERPLATE = re.compile(
+    r"equal (opportunity|employment)|affirmative action|compensation|salary|hourly rates?|"
+    r"pay (range|transparency|based)|\bbenefits?\b|insurance|premiums?|401\(k\)|privacy|machine-readable",
+    re.IGNORECASE,
+)
+# Words that decide a verdict. A line with one of these makes the excerpt.
 KEY_TERMS = re.compile(
     r"\b(ph\.?\s?d|doctorate|doctoral|master'?s|bachelor'?s|degree|undergraduate|"
-    r"\d+\+?\s*(years?|yrs)|years? of|preferred|required|must|minimum|"
+    r"\d+\+?\s*(years?|yrs)|years? of|"
     r"graduat\w*|enrolled|pursuing|returning|remote|hybrid|on-?site|in-office|relocat\w*)\b",
     re.IGNORECASE,
 )
+# Words that matter next to a key term ("2+ years preferred") but are too common to
+# pick a line on their own ("organizations must...", "Email (Required)"). Highlighted only.
+WEAK_TERMS = re.compile(r"\b(preferred|required|must|minimum)\b", re.IGNORECASE)
 # Degree abbreviations, matched case-sensitively so "ms" in a word isn't caught.
 DEGREE_ABBREV = re.compile(r"\b(BS|BA|MS|MBA|B\.S\.|M\.S\.|B\.A\.)(?=\W|$)")
 
@@ -46,6 +56,10 @@ def has_key_term(line):
     return bool(KEY_TERMS.search(line) or DEGREE_ABBREV.search(line))
 
 
+def ends_section(line):
+    return bool(SECTION_END.search(line.strip(" :-•*")) or BOILERPLATE.search(line))
+
+
 def excerpt(text, max_lines=MAX_LINES):
     """The lines worth reading, in their original order, with "…" where lines were cut."""
     lines = text.splitlines()
@@ -54,10 +68,10 @@ def excerpt(text, max_lines=MAX_LINES):
         if is_header(line):
             keep.add(i)
             for j in range(i + 1, min(i + 1 + SECTION_LINES, len(lines))):
-                if SECTION_END.search(lines[j].strip(" :-•*")):
+                if ends_section(lines[j]):
                     break
                 keep.add(j)
-        elif has_key_term(line):
+        elif has_key_term(line) and not BOILERPLATE.search(line):
             keep.add(i)
     if not keep:
         keep = set(range(min(max_lines, len(lines))))
@@ -77,5 +91,6 @@ def highlight(text, color=True):
     """Wrap verdict-deciding words in bold yellow (terminal colors). No-op when color is off."""
     if not color:
         return text
-    marked = KEY_TERMS.sub(lambda m: f"{HIGHLIGHT}{m.group(0)}{RESET}", text)
-    return DEGREE_ABBREV.sub(lambda m: f"{HIGHLIGHT}{m.group(0)}{RESET}", marked)
+    for pattern in (KEY_TERMS, WEAK_TERMS, DEGREE_ABBREV):
+        text = pattern.sub(lambda m: f"{HIGHLIGHT}{m.group(0)}{RESET}", text)
+    return text
