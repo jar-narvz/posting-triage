@@ -6,6 +6,7 @@ verdict and deciding field, choosing phrases that make exactly that rule fire,
 so its gold answers never come from the rules module. See docs/design.md.
 """
 
+import random
 from dataclasses import dataclass, field
 
 PASS, FLAG, SKIP = "pass", "flag", "skip"
@@ -203,3 +204,148 @@ def effect(slot, phrase, chosen):
     if slot == "location" and phrase.text in US_LOCATIONS and chosen["track"].values["track"] == "spring_coop":
         return PASS
     return phrase.effect
+
+
+# ---------------------------------------------------------------------------
+# Generator
+
+
+COMPANY_FIRST = ["Northwind", "Bluefin", "Cedar", "Harbor", "Quill", "Lumen", "Juniper", "Kestrel",
+                 "Meridian", "Orchid", "Pinecrest", "Riverbend", "Solstice", "Tidewater", "Vantage", "Willow"]
+COMPANY_SECOND = ["Labs", "Systems", "Health", "Robotics", "Analytics", "Software", "Networks", "Cloud"]
+NAV = ["Careers", "Teams", "Locations", "Students", "Search jobs", "Sign in", "Life at work", "Blog"]
+BLURBS = [
+    "We build tools that help small businesses run their operations from a single place.",
+    "Our platform helps hospitals coordinate care across teams and devices.",
+    "We make infrastructure software that thousands of engineering teams rely on every day.",
+    "We're a fast-growing startup building the data layer for modern logistics.",
+]
+RESPONSIBILITY_HEADERS = ["What you'll do", "Responsibilities", "The role", "In this role, you will"]
+QUALIFICATION_HEADERS = ["Minimum Qualifications", "What you'll need", "Requirements", "Qualifications", "Who you are"]
+SKILLS = [
+    "Strong programming skills in Python, Java, or C++",
+    "Solid understanding of data structures and algorithms",
+    "Clear written and verbal communication",
+    "Experience with Git and collaborative development",
+    "Familiarity with cloud platforms such as AWS or GCP",
+]
+BENEFITS = ["Benefits", "- Medical, dental, and vision coverage", "- Paid time off and parental leave",
+            "We are an equal opportunity employer."]
+
+# Share of postings per verdict; FLAG and SKIP are spread evenly over the fields that can cause them.
+VERDICT_SHARE = {"apply": 0.35, "flag": 0.30, "skip": 0.35}
+DECIDERS = {
+    "flag": [slot for slot, phrases in SLOTS if any(p.effect == FLAG for p in phrases)],
+    "skip": [slot for slot, phrases in SLOTS if any(p.effect == SKIP for p in phrases)],
+}
+# Per-slot chance of a hard-case phrase; about half of postings end up with one. Titles get more,
+# since title tricks (Graduate, I/II, Senior as a team name) are what the keyword baseline misreads.
+HARD_PICK = {"role_level": 0.35}
+HARD_PICK_DEFAULT = 0.12
+
+
+def plan_scenarios(n):
+    """(verdict, deciding_field) for n postings: the verdict shares above,
+    split evenly across deciding fields, leftovers to the first fields."""
+    counts = {v: round(n * share) for v, share in VERDICT_SHARE.items()}
+    counts["apply"] += n - sum(counts.values())
+    scenarios = [("apply", "")] * counts["apply"]
+    for verdict in ("flag", "skip"):
+        fields = DECIDERS[verdict]
+        for i in range(counts[verdict]):
+            scenarios.append((verdict, fields[i % len(fields)]))
+    return scenarios
+
+
+def wanted_effects(slot, verdict, deciding):
+    """Which effects a slot's phrase may have so that `deciding` is the first rule to fire."""
+    if verdict == "apply":
+        return {PASS}
+    order = [s for s, _ in SLOTS]
+    if order.index(slot) < order.index(deciding):
+        return {PASS}
+    if slot == deciding:
+        return {verdict}
+    if RULE_OF[slot] == RULE_OF[deciding]:
+        return {PASS}  # e.g. role type FLAG with a skipping track would make rule 3 ambiguous
+    return {PASS, FLAG, SKIP}  # after the deciding rule: anything, it can't change the verdict
+
+
+def pick_phrases(rng, kind, verdict, deciding):
+    """One phrase per slot for this scenario, or None if this kind can't produce it."""
+    chosen = {}
+    for slot, phrases in SLOTS:
+        wanted = wanted_effects(slot, verdict, deciding)
+        fits = [p for p in phrases if kind in p.kinds and effect(slot, p, chosen) in wanted]
+        if not fits:
+            return None
+        hard = [p for p in fits if p.hard]
+        easy = [p for p in fits if not p.hard]
+        # Hard phrases only when the dice say so, or when nothing else fits (e.g. "Data & ML" for a role-type FLAG).
+        chosen[slot] = rng.choice(hard) if hard and (not easy or rng.random() < HARD_PICK.get(slot, HARD_PICK_DEFAULT)) else rng.choice(easy)
+    return chosen
+
+
+def build_posting(rng, index, verdict, deciding):
+    kinds = [INTERN, FULLTIME]
+    rng.shuffle(kinds)
+    for kind in kinds:
+        chosen = pick_phrases(rng, kind, verdict, deciding)
+        if chosen:
+            break
+    else:
+        raise ValueError(f"no phrases can make {deciding} decide {verdict}")
+
+    role, level, track = chosen["role_type"], chosen["role_level"], chosen["track"]
+    title = level.text.format(role=role.text) + track.text
+    location = chosen["location"].text
+    company = f"{rng.choice(COMPANY_FIRST)} {rng.choice(COMPANY_SECOND)}"
+    unclear = level.values["role_level"] == "unclear"
+
+    requirements = [chosen[s].text for s in ("degree", "experience", "graduation") if chosen[s].text]
+    requirements += rng.sample(SKILLS, 2)
+    rng.shuffle(requirements)
+    lines = rng.sample(NAV, rng.randint(3, 6)) + [title]
+    if location:
+        lines.append(f"Location: {location}")
+    lines += [f"About {company}", rng.choice(BLURBS), rng.choice(RESPONSIBILITY_HEADERS)]
+    lines += [f"- {duty}" for duty in role.duties]
+    if unclear:
+        lines.append(UNCLEAR_LEVEL_TEXT)
+    lines.append(rng.choice(QUALIFICATION_HEADERS))
+    lines += [f"- {r}" for r in requirements]
+    lines += BENEFITS
+
+    gold = {}
+    for phrase in chosen.values():
+        gold.update(phrase.values)
+    quotes = {
+        "role_type": role.text,
+        "role_level": UNCLEAR_LEVEL_TEXT if unclear else level.text.format(role=role.text),
+        "track": track.text.removeprefix(" - ") or None,
+        **{slot: chosen[slot].text or None for slot in ("degree", "experience", "graduation", "location")},
+    }
+    hard = [p.hard for p in chosen.values() if p.hard]
+    if chosen["track"].values["track"] == "spring_coop" and location in US_LOCATIONS:
+        hard.append("spring co-op outside Bay Area / LA")
+    return {
+        "id": f"syn-{index:03d}",
+        "title": title,
+        "company": company,
+        "location": location,
+        "kind": kind,
+        "text": "\n".join(lines),
+        "gold_verdict": verdict,
+        "deciding_field": deciding,
+        "gold": gold,
+        "quotes": quotes,
+        "hard": hard,
+    }
+
+
+def generate(n=200, seed=2027):
+    """n postings with known answers. Same n and seed, same postings."""
+    rng = random.Random(seed)
+    scenarios = plan_scenarios(n)
+    rng.shuffle(scenarios)
+    return [build_posting(rng, i, verdict, deciding) for i, (verdict, deciding) in enumerate(scenarios, 1)]
