@@ -6,7 +6,7 @@ Oct 21, 2026 · @jared
 
 The posting-triage tool reads a job posting and decides, before any resume is tailored, whether the applicant should apply, skip, or look closer. It first checks that the posting is still live, then extracts the eligibility fields a human checks (role level, degree, experience, graduation window, location) and returns a verdict with the reason behind it.
 
-It replaces a set of filtering rules that currently live inside a daily prompt. Those rules have never been measured. The tool is evaluated on a hand-labeled set of postings against a keyword baseline, and the result is reported as precision and recall on the "apply" verdict.
+It replaces a set of filtering rules that currently live inside a daily prompt. Those rules have never been measured. The tool is evaluated against a keyword baseline on a synthetic benchmark of postings whose correct answers are known by construction, and the result is reported as precision and recall on the "apply" verdict plus per-field extraction accuracy. A small set of hand-labeled real postings serves as a separate real-world spot check.
 
 ## Glossary
 
@@ -18,7 +18,8 @@ It replaces a set of filtering rules that currently live inside a daily prompt. 
 | Verdict | The tool's output per posting: **apply**, **flag**, or **skip**, always with a reason. |
 | Flag | Shown to the user with a warning instead of hidden. Used for a graduation-window mismatch and for anything uncertain. |
 | Dead link | A posting URL that returns a 404, a "no longer available" page, or under ~500 characters of real posting text. |
-| Ground truth | The correct verdict for a posting, labeled by hand from what the posting text says. |
+| Ground truth | The correct verdict and field values for a posting. Known by construction for synthetic postings; labeled by hand for the real-world spot check. |
+| Synthetic benchmark | Generated postings built from a target verdict and a library of phrases with known values, so every field's correct answer is known without hand labeling. |
 | Baseline | A keyword-rule classifier with no LLM. The LLM must beat it to justify itself. |
 | Precision (apply) | Of the postings the tool says to apply to, the share that were truly eligible. The metric that matters most here. |
 | Recall (apply) | Of the truly eligible postings, the share the tool said to apply to. |
@@ -80,7 +81,7 @@ Handshake shows that eligibility filtering works when employers set it up for st
 3. **Verdict with reason.** Return apply, flag, or skip, plus a one-line reason naming the field that decided it.
 4. **Flag, don't hide, the graduation window.** A graduation-window mismatch produces a flag, never a skip; the applicant may apply anyway.
 5. **Configurable profile.** The applicant's facts (graduation date, degree, target locations, tracks) live in a config file, not in code.
-6. **Evaluation.** Score the classifier and the keyword baseline on the same hand-labeled set, and report precision and recall on "apply".
+6. **Evaluation.** Score the classifier and the keyword baseline on the same synthetic benchmark, report precision and recall on "apply" and per-field extraction accuracy, and report a hand-labeled real-world spot check separately.
 7. **Runnable by others.** Anyone can clone the repo and run it on public postings with their own API key, and a public web page shows a gallery of real results and a recorded demo without making live AI calls.
 
 ### Non-functional requirements
@@ -121,12 +122,12 @@ The LLM reads, code decides. Each posting passes a cheap liveness check, then an
 | 3. Verdict with reason | Stage 3: rules module picks the deciding field and prints its quote |
 | 4. Flag the graduation window | Rule: a graduation-window mismatch maps to flag, never skip |
 | 5. Configurable profile | `profile.yaml`, read by the rules module only |
-| 6. Evaluation | `eval/` scores baseline, direct-verdict prompt, and the pipeline on the labeled set |
+| 6. Evaluation | `eval/` scores baseline, direct-verdict prompt, and the pipeline on the synthetic benchmark, plus the real-world spot check |
 | 7. Runnable by others | Public postings from the Simplify and speedyapply repos; API key from an environment variable |
 
 ### Edge cases
 
-- **"Graduate" in the title.** TikTok's "Machine Learning Engineer Graduate" is bachelor's-level; a TikTok title ending "- PhD" is not. The baseline gets these wrong; the labeled set includes several on purpose.
+- **"Graduate" in the title.** TikTok's "Machine Learning Engineer Graduate" is bachelor's-level; a TikTok title ending "- PhD" is not. The baseline gets these wrong; the benchmark includes several on purpose.
 - **Mixed levels.** "Software Engineer I/II" or "New Grad or Experienced": eligible at the lowest level listed.
 - **Preferred vs required experience.** "Required" decides; "preferred" produces a flag.
 - **Several locations.** Eligible if any one listed location, or Remote, matches the profile.
@@ -176,20 +177,29 @@ DEAD   Foo Corp — Software Engineer I
 
 The eval prints one table: precision and recall on "apply" for the baseline, the direct-verdict prompt, and the pipeline, plus per-field extraction accuracy.
 
+### Synthetic benchmark
+
+Hand-labeling ~100 real postings field by field proved too slow to be worth it, so the headline eval uses generated postings with known answers instead.
+
+- **Scenario first.** Each posting starts from a target verdict and the field that decides it (e.g. "SKIP, decided by degree"). Phrases for the rules before that field are chosen to pass, the deciding field gets a phrase that fires, and later fields get any phrase. The gold verdict is therefore known by construction, not computed by the rules module, so a test can check the rules module against it.
+- **Phrase library.** Every phrase carries its true field value (e.g. "2+ years of experience preferred" → 2, preferred) and is reviewed by hand once. Each field's gold quote is the exact phrase inserted.
+- **Realism filler.** Navigation, company blurbs, responsibilities, benefits, and varied section headers surround the requirements, so extraction works the way it does on real pages.
+- **Known limit.** Real postings are messier than generated ones and use phrasings the library doesn't have, so synthetic scores are an upper bound. The hand-labeled real postings are reported next to them to show the gap.
+
 ## Proposed plan
 
-The MVP is the eval, not the app: a labeled set, the baseline, and the pipeline scored side by side. Without that number the repo is just another wrapper.
+The MVP is the eval, not the app: a benchmark with known answers, the baseline, and the pipeline scored side by side. Without that number the repo is just another wrapper.
 
 ### MVP
 
-- ~100 hand-labeled postings from the public repos, with at least 15 hard cases ("Graduate" titles, "preferred" experience, mixed levels).
+- A 200-posting synthetic benchmark with known answers, at least 40 of them hard cases ("Graduate" titles, "preferred" experience, mixed levels), plus a small hand-labeled set of real postings as a spot check.
 - Baseline rules, extraction prompt, rules module, `profile.yaml`.
 - `eval/` script printing precision and recall on "apply" for each approach.
 - README with the results table and the key decisions behind it.
 
 ### Phases
 
-1. **Labeling guide and dataset.** Write the labeling rules first, then label. The guide is what makes labels consistent. Posting text is cached locally before labeling, so labels and the eval read the same text.
+1. **Benchmark and spot check.** Build the synthetic benchmark from a reviewed phrase library, and keep a few hand-labeled real postings (following the labeling guide) as a real-world check. Real posting text is cached locally, so labels and the eval read the same text.
 2. **Baseline and eval harness.** Score the keyword rules. This sets the number to beat before any LLM code exists.
 3. **Extraction and verdict rules.** Build stages 2 and 3, with unit tests on the rules module.
 4. **Liveness check.** Board APIs for Greenhouse, Lever, and Ashby; headless-browser fallback (Playwright) for the rest, with a flag for pages it still can't read.

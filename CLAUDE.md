@@ -1,7 +1,7 @@
 # Posting Triage Tool
 
 ## What this is
-A tool that reads a job posting and returns APPLY, FLAG, or SKIP (or DEAD) with a one-line reason quoted from the posting. It checks that a posting is live, has an LLM extract eligibility fields with quoted evidence, then applies deterministic rules against the applicant's profile. The project's headline is its eval: precision/recall on "apply" for a keyword baseline vs. an LLM-decides prompt vs. this pipeline, across three Claude models.
+A tool that reads a job posting and returns APPLY, FLAG, or SKIP (or DEAD) with a one-line reason quoted from the posting. It checks that a posting is live, has an LLM extract eligibility fields with quoted evidence, then applies deterministic rules against the applicant's profile. The project's headline is its eval: precision/recall on "apply" and per-field extraction accuracy for a keyword baseline vs. an LLM-decides prompt vs. this pipeline, across three Claude models, on a synthetic benchmark with known answers.
 
 Owner: Jared Narvaez (UC Berkeley CS, May 2027). This is a public portfolio repo.
 
@@ -26,6 +26,7 @@ Owner: Jared Narvaez (UC Berkeley CS, May 2027). This is a public portfolio repo
 4. Rules in code, profile in config. `profile.yaml` holds degree, graduation date, locations, tracks, target role types, and excluded role types. Excluded role type = SKIP; any role type not in `target_role_types` (including "other") = SKIP; ambiguous role type (e.g. "Data & ML Engineer") = FLAG. A posting whose track isn't in `tracks` = SKIP; if it lists several terms, any one in `tracks` counts as a match.
 5. Liveness first. Greenhouse, Lever, and Ashby links go through their public job-board APIs. Everything else (Workday, Apple, other JS-rendered pages) opens in a headless browser (Playwright), only for links the APIs can't handle. Dead = return the company careers page. A page that still can't be read = FLAG ("couldn't verify"), never DEAD.
 6. Baseline (no LLM): SKIP if the title contains Senior, II, L4, Staff, graduate, masters, phd, or Data Scientist; SKIP if location isn't Bay Area, Los Angeles, or Remote; else APPLY.
+7. Eval on a synthetic benchmark. Postings are generated from a target verdict + deciding field and a hand-reviewed phrase library with known values, so gold answers are known by construction (not computed by the rules module). Hand-labeled real postings in `data/labels.csv` are a separate real-world spot check; synthetic scores are an upper bound.
 
 ## Model choice
 Eval runs claude-haiku-5-5, claude-sonnet-5-5, and claude-opus-5-5. The tool defaults to the cheapest model within 5 points of the best apply-precision. Use the Batch API for eval runs.
