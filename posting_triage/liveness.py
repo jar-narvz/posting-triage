@@ -104,7 +104,13 @@ def html_to_text(markup):
     parser = _TextExtractor()
     parser.feed(markup)
     parser.close()
-    lines = (" ".join(line.split()) for line in "".join(parser.parts).splitlines())
+    return tidy_text("".join(parser.parts))
+
+
+def tidy_text(text):
+    """Collapse spaces within each line and drop empty lines and empty bullets.
+    Shared by the API and browser paths so every cached posting has the same shape."""
+    lines = (" ".join(line.split()) for line in text.splitlines())
     return "\n".join(line for line in lines if line not in ("", "-"))
 
 
@@ -201,3 +207,63 @@ def _ashby(job, get):
 
 def join_lines(*parts):
     return "\n".join(p.strip() for p in parts if p and p.strip())
+
+
+class Browser:
+    """Headless Chromium for pages the board APIs can't reach (Workday, company sites, ...).
+
+    It only loads pages and reads their text: it never clicks, signs in, or submits anything.
+    Use as a context manager so one browser serves many postings:
+
+        with Browser() as browser:
+            result = browser.fetch(url)
+    """
+
+    def __init__(self, timeout_ms=30_000, settle_ms=10_000):
+        self.timeout_ms = timeout_ms
+        self.settle_ms = settle_ms
+
+    def __enter__(self):
+        from playwright.sync_api import sync_playwright  # imported here so API-only runs don't need it
+
+        self._playwright = sync_playwright().start()
+        self._browser = self._playwright.chromium.launch(headless=True)
+        return self
+
+    def __exit__(self, *exc):
+        self._browser.close()
+        self._playwright.stop()
+
+    def fetch(self, url):
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+        page = self._browser.new_page()
+        try:
+            response = page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+            status = response.status if response else 0
+            if status in (404, 410):
+                return PostingText("not_found", "browser", detail=f"HTTP {status}")
+            try:
+                # JS-rendered boards (Workday) fill the page after load; give them time to settle.
+                page.wait_for_load_state("networkidle", timeout=self.settle_ms)
+            except PlaywrightTimeout:
+                pass  # some pages never go idle; read whatever has rendered
+            text = tidy_text(page.inner_text("body"))
+            if status >= 400:
+                return PostingText("unreadable", "browser", text, detail=f"HTTP {status}")
+            return PostingText("ok", "browser", text)
+        except PlaywrightError as e:
+            return PostingText("unreadable", "browser", detail=str(e).splitlines()[0][:200])
+        finally:
+            page.close()
+
+
+def fetch_posting(url, browser=None, get=get_json):
+    """Board API if the URL has one; otherwise the browser; otherwise unreadable."""
+    job = board_job(url)
+    if job:
+        return fetch_from_board(job, get)
+    if browser is None:
+        return PostingText("unreadable", "browser", detail="no board API; browser not started")
+    return browser.fetch(url)

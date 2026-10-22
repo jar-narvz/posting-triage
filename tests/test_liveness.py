@@ -1,6 +1,15 @@
 import pytest
 
-from posting_triage.liveness import BoardJob, PostingText, board_job, fetch_from_board, html_to_text
+from posting_triage.liveness import (
+    BoardJob,
+    Browser,
+    PostingText,
+    board_job,
+    fetch_from_board,
+    fetch_posting,
+    html_to_text,
+    tidy_text,
+)
 
 UUID = "3d182b7f-482e-45b2-8668-f04f0b5fda8e"
 
@@ -171,3 +180,74 @@ def test_other_failures_are_unreadable_not_dead(status):
 def test_real_greenhouse_404():
     result = fetch_from_board(BoardJob("greenhouse", "not-a-real-board-xyz", "1"))
     assert result.status == "not_found"
+
+
+def test_tidy_text_matches_html_to_text_shape():
+    assert tidy_text("  Title \n\n\n   Body   text\n-\n- item ") == "Title\nBody text\n- item"
+
+
+class FakeBrowser:
+    def __init__(self):
+        self.urls = []
+
+    def fetch(self, url):
+        self.urls.append(url)
+        return PostingText("ok", "browser", "rendered")
+
+
+def test_fetch_posting_routes_board_urls_to_the_api():
+    browser = FakeBrowser()
+    get = fake_get({GH_URL: (200, {"title": "SWE", "content": ""})})
+    result = fetch_posting("https://boards.greenhouse.io/acme/jobs/123", browser, get)
+    assert result.source == "greenhouse"
+    assert browser.urls == []
+
+
+def test_fetch_posting_sends_other_urls_to_the_browser():
+    browser = FakeBrowser()
+    url = "https://acme.wd1.myworkdayjobs.com/en-US/ext/job/SWE_JR1"
+    assert fetch_posting(url, browser, fake_get({})) == PostingText("ok", "browser", "rendered")
+    assert browser.urls == [url]
+
+
+def test_fetch_posting_without_a_browser_is_unreadable():
+    result = fetch_posting("https://acme.example/jobs/1", None, fake_get({}))
+    assert result.status == "unreadable"
+
+
+@pytest.fixture
+def local_site():
+    """A tiny local web server: /job renders its text with JavaScript, /gone is a 404."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    pages = {
+        "/job": (200, "<body><div id=app></div><script>"
+                      "document.getElementById('app').innerHTML = '<h1>SWE I</h1><p>BS   required</p>';"
+                      "</script></body>"),
+        "/gone": (404, "<body>Not found</body>"),
+    }
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            status, body = pages.get(self.path, (500, "error"))
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_port}"
+    server.shutdown()
+
+
+@pytest.mark.browser
+def test_browser_reads_javascript_rendered_text(local_site):
+    with Browser(settle_ms=2_000) as browser:
+        assert browser.fetch(f"{local_site}/job") == PostingText("ok", "browser", "SWE I\nBS required")
+        assert browser.fetch(f"{local_site}/gone").status == "not_found"
+        assert browser.fetch(f"{local_site}/broken").status == "unreadable"
