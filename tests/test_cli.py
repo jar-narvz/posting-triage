@@ -64,3 +64,19 @@ class FakeBrowser:
 
     def __exit__(self, *exc):
         FakeBrowser.closed = True
+
+
+def test_label_command_passes_paths_through(tmp_path, monkeypatch):
+    candidates = tmp_path / "candidates.csv"
+    candidates.write_text("id,url,company,title\naaa,https://x/1,Acme,SWE\n")
+    seen = {}
+
+    def fake_session(rows, io, labels, skips, cache_dir):
+        seen.update(rows=rows, labels=labels, skips=skips, cache_dir=cache_dir)
+        return 0
+
+    monkeypatch.setattr("posting_triage.cli.run_session", fake_session)
+    args = ["label", "--candidates", str(candidates), "--labels", "L.csv", "--skips", "S.csv", "--cache-dir", "C"]
+    assert main(args) == 0
+    assert [r["id"] for r in seen["rows"]] == ["aaa"]
+    assert (seen["labels"], seen["skips"], seen["cache_dir"]) == ("L.csv", "S.csv", "C")

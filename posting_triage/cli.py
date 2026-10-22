@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 
 from posting_triage.cache import CACHE_DIR, cache_all
+from posting_triage.label import Terminal, run_session
 from posting_triage.liveness import Browser, board_job, fetch_posting
 from posting_triage.profile import (
     DEGREES,
@@ -38,6 +39,11 @@ def main(argv=None):
     cache.add_argument("--refresh", action="store_true", help="refetch everything, not just new and unreadable")
     cache.add_argument("--no-browser", action="store_true", help="board APIs only; skip other links")
     cache.add_argument("--delay", type=float, default=1.0, help="seconds between requests")
+    label = sub.add_parser("label", help="hand-label candidates into data/labels.csv")
+    label.add_argument("--candidates", default="data/candidates.csv")
+    label.add_argument("--labels", default="data/labels.csv")
+    label.add_argument("--skips", default="data/label_skips.csv")
+    label.add_argument("--cache-dir", default=str(CACHE_DIR))
     sub.add_parser("run", help="triage postings (not implemented yet)")
     args = parser.parse_args(argv)
 
@@ -45,6 +51,10 @@ def main(argv=None):
         return init_profile(Path(args.path))
     if args.command == "cache":
         return run_cache(args)
+    if args.command == "label":
+        with open(args.candidates, newline="") as f:
+            candidates = list(csv.DictReader(f))
+        return run_session(candidates, Terminal(), args.labels, args.skips, args.cache_dir)
     if args.command == "run":
         print("triage run: not implemented yet")
         return 0
