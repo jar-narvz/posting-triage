@@ -226,6 +226,9 @@ def local_site():
                       "document.getElementById('app').innerHTML = '<h1>SWE I</h1><p>BS   required</p>';"
                       "</script></body>"),
         "/gone": (404, "<body>Not found</body>"),
+        # iCIMS-style: the posting lives inside an iframe.
+        "/framed": (200, "<body><nav>Careers</nav><iframe src='/inner'></iframe></body>"),
+        "/inner": (200, "<body><p>Junior Engineer</p><p>2+ years required</p></body>"),
     }
 
     class Handler(BaseHTTPRequestHandler):
@@ -251,3 +254,10 @@ def test_browser_reads_javascript_rendered_text(local_site):
         assert browser.fetch(f"{local_site}/job") == PostingText("ok", "browser", "SWE I\nBS required")
         assert browser.fetch(f"{local_site}/gone").status == "not_found"
         assert browser.fetch(f"{local_site}/broken").status == "unreadable"
+
+
+@pytest.mark.browser
+def test_browser_reads_text_inside_iframes(local_site):
+    with Browser(settle_ms=2_000) as browser:
+        result = browser.fetch(f"{local_site}/framed")
+    assert result == PostingText("ok", "browser", "Careers\nJunior Engineer\n2+ years required")

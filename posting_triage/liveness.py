@@ -249,7 +249,7 @@ class Browser:
                 page.wait_for_load_state("networkidle", timeout=self.settle_ms)
             except PlaywrightTimeout:
                 pass  # some pages never go idle; read whatever has rendered
-            text = tidy_text(page.inner_text("body"))
+            text = tidy_text("\n".join(frame_texts(page, PlaywrightError)))
             if status >= 400:
                 return PostingText("unreadable", "browser", text, detail=f"HTTP {status}")
             return PostingText("ok", "browser", text)
@@ -257,6 +257,20 @@ class Browser:
             return PostingText("unreadable", "browser", detail=str(e).splitlines()[0][:200])
         finally:
             page.close()
+
+
+def frame_texts(page, error_type, frame_timeout_ms=5_000):
+    """Text of the page and of every iframe in it. Some boards (iCIMS) put the
+    whole job description inside an iframe, which the page's own text leaves out."""
+    texts = [page.inner_text("body")]
+    for frame in page.frames:
+        if frame is page.main_frame:
+            continue
+        try:
+            texts.append(frame.inner_text("body", timeout=frame_timeout_ms))
+        except error_type:
+            pass  # frame without a body, or gone before we read it
+    return texts
 
 
 def fetch_posting(url, browser=None, get=get_json):
