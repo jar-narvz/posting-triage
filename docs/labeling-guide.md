@@ -14,7 +14,7 @@ Two more rules:
   degree: bachelors
   graduation_date: 2027-05
   locations: [Bay Area, Los Angeles, Remote]
-  tracks: [new_grad, summer_2027]
+  tracks: [new_grad, summer_2027, spring_coop]
   target_role_types: [swe, ml_ai, data_engineer, frontend_fullstack]
   excluded_role_types: [data_scientist]
   ```
@@ -87,7 +87,7 @@ So rule 3 is:
 
 > **Quux Space — Software Engineering Intern, Fall 2026**
 
-Track `o` other term → not in `[new_grad, summer_2027]` → **SKIP**, deciding field **track**.
+Track `o` other term → not in `[new_grad, summer_2027, spring_coop]` → **SKIP**, deciding field **track**.
 
 How to pick the track:
 
@@ -98,7 +98,7 @@ How to pick the track:
 | "Spring 2027 Co-op" | `c` spring co-op |
 | fall or winter terms, part-time co-ops, any other term | `o` other term |
 
-When a posting lists **several terms, pick one that's in the profile if there is one**. "Summer or Fall 2027" → `s`, because summer counts. "Fall 2026 / Spring 2027" → `c` spring co-op, which is SKIP with the example profile.
+When a posting lists **several terms, pick one that's in the profile if there is one**. "Summer or Fall 2027" → `s`, because summer counts. "Fall 2026 / Spring 2027" → `c` spring co-op, because spring counts. "Fall 2026 only" → `o` other term → SKIP.
 
 If role type and track would both SKIP, the deciding field is **role type**, since it comes first.
 
@@ -258,4 +258,5 @@ These are the cases the keyword baseline gets wrong. Write a note on each one so
 - [ ] "Data & ML" or other straddling role types (FLAG on role type)
 - [ ] "Senior" that isn't a level (a team or product name, e.g. "Senior Living Platform")
 - [ ] A posting listing several terms, e.g. "Summer or Fall 2027" (matches on summer)
+- [ ] A spring co-op outside Bay Area / LA, e.g. Boston (still matches: spring co-ops accept any US location)
 - [ ] A title that sounds off-target but is mostly coding, e.g. "Technology Analyst – Software Engineering" (swe, not other)

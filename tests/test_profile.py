@@ -26,7 +26,7 @@ def test_example_profile_loads():
         degree="bachelors",
         graduation_date=datetime.date(2027, 5, 1),
         locations=("Bay Area", "Los Angeles", "Remote"),
-        tracks=("new_grad", "summer_2027"),
+        tracks=("new_grad", "summer_2027", "spring_coop"),
         target_role_types=("swe", "ml_ai", "data_engineer", "frontend_fullstack"),
         excluded_role_types=("data_scientist",),
     )
