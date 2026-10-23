@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from anthropic.types import Message
 
-from posting_triage.batch import Pending, Replay, advance, immediate, load_saved, token_totals
+from posting_triage.batch import Pending, Replay, advance, check_texts, immediate, load_saved, token_totals
 from posting_triage.direct import direct_verdict
 from posting_triage.extract import pipeline_verdict
 from posting_triage.profile import load_profile
@@ -135,6 +135,29 @@ def test_a_run_directory_belongs_to_one_set_of_postings(tmp_path):
     fewer = dict(list(TEXTS.items())[:3])
     with pytest.raises(RuntimeError, match="new run name"):
         advance(client, tmp_path, fewer, pipeline, log=lambda s: None)
+
+
+def test_changed_posting_text_is_refused(tmp_path):
+    client, batches = client_for(lambda pid, k: good(pid))
+    advance(client, tmp_path, TEXTS, pipeline, log=lambda s: None)
+    pid = sorted(TEXTS)[0]
+    with pytest.raises(RuntimeError, match=f"posting text changed.*{pid}"):
+        advance(client, tmp_path, TEXTS | {pid: TEXTS[pid] + " edited"}, pipeline, log=lambda s: None)
+    assert len(batches.created) == 1  # nothing sent for the edited text
+
+
+def test_new_postings_can_join_a_run_and_reading_records_nothing(tmp_path):
+    check_texts(tmp_path, {"a": "one"})
+    assert not (tmp_path / "texts.json").exists()
+    check_texts(tmp_path, {"a": "one"}, record=True)
+    check_texts(tmp_path, {"a": "one", "b": "two"}, record=True)  # e.g. a hand label added later
+    assert set(json.loads((tmp_path / "texts.json").read_text())) == {"a", "b"}
+
+
+def test_a_run_saved_before_text_checks_is_refused(tmp_path):
+    (tmp_path / "round1.batch.json").write_text("{}")
+    with pytest.raises(RuntimeError, match="without texts.json"):
+        check_texts(tmp_path, TEXTS)
 
 
 def test_saved_responses_and_token_totals(tmp_path):

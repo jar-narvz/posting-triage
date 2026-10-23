@@ -7,6 +7,7 @@ saved responses in order, and when it runs out it records the request needed nex
 Those requests become the next round's batch; round 2 holds the pipeline's retries.
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -72,6 +73,35 @@ def load_saved(run_dir):
     return saved, rounds
 
 
+def text_hash(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def check_texts(run_dir, postings, record=False):
+    """Saved responses are matched to postings by id, so a posting whose text changed
+    (a new generator, a re-fetched page) would silently get answers meant for its old
+    text. texts.json keeps a hash of each posting's text as the run first saw it.
+    Raises if a known id's text has changed; with record=True, adds new ids."""
+    run_dir = Path(run_dir)
+    path = run_dir / "texts.json"
+    if path.exists():
+        known = json.loads(path.read_text())
+    elif (run_dir / "round1.batch.json").exists():
+        raise RuntimeError(f"{run_dir}: saved without texts.json, so changed postings can't be caught; "
+                           "use a new run name")
+    else:
+        known = {}
+    changed = sorted(pid for pid, text in postings.items() if pid in known and known[pid] != text_hash(text))
+    if changed:
+        shown = ", ".join(changed[:5]) + (" …" if len(changed) > 5 else "")
+        raise RuntimeError(f"{run_dir}: posting text changed since these responses were saved ({shown}); "
+                           "use a new run name")
+    new = {pid: text_hash(text) for pid, text in postings.items() if pid not in known}
+    if record and new:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        write_atomic(path, json.dumps(known | new, indent=1, sort_keys=True))
+
+
 def write_atomic(path, text):
     tmp = path.with_suffix(".tmp")
     tmp.write_text(text)
@@ -83,6 +113,7 @@ def advance(client, run_dir, postings, solve, log=print):
     posting is finished, else None: run it again later and it picks up where it stopped."""
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
+    check_texts(run_dir, postings, record=True)
     while True:
         saved, rounds = load_saved(run_dir)
         done, needed = step(postings, solve, saved)

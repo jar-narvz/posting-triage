@@ -106,6 +106,14 @@ def test_report_has_tables_and_is_repeatable(tmp_path, cache_dir, monkeypatch):
     assert text == report(10, 7, PROFILE, [], CANDIDATES, tmp_path, [MODEL])
 
 
+def test_report_refuses_runs_saved_for_other_posting_text(tmp_path, cache_dir, monkeypatch):
+    synthetic = generate(n=10, seed=7)
+    monkeypatch.setattr("test_batch.BY_ID", {p["id"]: p for p in synthetic})
+    run_llm(perfect_client(synthetic), tmp_path, PROFILE, synthetic, [MODEL], log=lambda s: None)
+    with pytest.raises(RuntimeError, match="posting text changed"):
+        report(10, 8, PROFILE, [], CANDIDATES, tmp_path, [MODEL])  # same ids, another seed's postings
+
+
 def test_unfinished_runs_are_named(tmp_path, cache_dir):
     text = report(5, 7, PROFILE, LABELS, CANDIDATES, tmp_path, [MODEL])
     assert "not finished: pipeline · haiku-5-5 (0/6 postings answered)" in text  # 5 synthetic + a1
