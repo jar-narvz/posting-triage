@@ -1,8 +1,10 @@
 """Stage 3: turn extracted fields + the profile into a verdict. Pure functions, no I/O.
 
 Fields come in the labels.csv format (strings, "" when the posting is silent), so the
-same code judges gold labels and LLM extractions. The rules run in the labeling guide's
-order and the first one to fire decides. Liveness (rule 1) happens before this stage.
+same code judges gold labels and LLM extractions. Every rule runs; any SKIP beats any
+FLAG, and the deciding field is the first rule, in the labeling guide's order, that gave
+the winning outcome. The order picks the reason shown, never the verdict. Liveness
+(rule 1) happens before this stage.
 """
 
 from dataclasses import dataclass
@@ -15,6 +17,8 @@ PASS = None
 RULE_ORDER = ["role_type", "track", "degree", "role_level", "experience", "graduation", "location"]
 DEGREE_RANK = {"none": 0, "bachelors": 1, "masters": 2, "phd": 3}
 MAX_REQUIRED_YEARS = 1  # "1+ years required" is fine for a new grad; more is a SKIP
+# Fields a rule reads besides its own: location's spring co-op exception reads the track.
+ALSO_READS = {"location": {"track"}}
 
 
 @dataclass(frozen=True)
@@ -27,14 +31,22 @@ class Verdict:
 def decide(fields, profile, quotes=None, unverified=()):
     """`quotes` maps a rule's field to the text it came from; `unverified` lists
     fields whose quote wasn't found in the posting even after a retry."""
-    quotes = quotes or {}
-    if unverified:  # rule 2: a value we can't trace to the posting can't decide anything
-        in_order = [f for f in RULE_ORDER if f in unverified] or sorted(unverified)
-        return Verdict(FLAG, "quote", quotes.get(in_order[0]))
-    for field in RULE_ORDER:
-        outcome = RULES[field](fields, profile)
-        if outcome is not PASS:
-            return Verdict(outcome, field, quotes.get(field))
+    quotes, unverified = quotes or {}, set(unverified)
+    if "form" in unverified:  # no usable extraction at all
+        return Verdict(FLAG, "quote", None)
+    # Rule 2: a value we can't trace to the posting can't decide anything, so any rule that
+    # reads one is set aside. A verified SKIP still stands; otherwise the posting is FLAG.
+    outcomes = {f: RULES[f](fields, profile) for f in RULE_ORDER
+                if not ({f} | ALSO_READS.get(f, set())) & unverified}
+    skips = [f for f, o in outcomes.items() if o is SKIP]
+    if skips:
+        return Verdict(SKIP, skips[0], quotes.get(skips[0]))
+    if unverified:
+        first = next((f for f in RULE_ORDER if f in unverified), None)
+        return Verdict(FLAG, "quote", quotes.get(first))
+    flags = [f for f, o in outcomes.items() if o is FLAG]
+    if flags:
+        return Verdict(FLAG, flags[0], quotes.get(flags[0]))
     return Verdict(APPLY, "", None)
 
 

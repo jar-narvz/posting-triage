@@ -43,9 +43,11 @@ def policy_effect(slot, v):
 
 
 def policy_verdict(gold):
-    """(verdict, deciding field) for a full set of gold values: the first rule that fires."""
-    for slot in RULE_ORDER:
-        outcome = policy_effect(slot, gold)
-        if outcome != PASS:
-            return outcome, slot
+    """(verdict, deciding field) for a full set of gold values: any SKIP beats any FLAG,
+    and the deciding field is the first rule that gave the winning outcome."""
+    outcomes = {slot: policy_effect(slot, gold) for slot in RULE_ORDER}
+    for verdict in (SKIP, FLAG):
+        fired = [slot for slot in RULE_ORDER if outcomes[slot] == verdict]
+        if fired:
+            return verdict, fired[0]
     return "apply", ""

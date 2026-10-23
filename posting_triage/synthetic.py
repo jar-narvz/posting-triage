@@ -259,17 +259,20 @@ def plan_scenarios(n):
 
 
 def wanted_effects(slot, verdict, deciding):
-    """Which effects a slot's phrase may have so that `deciding` is the first rule to fire."""
+    """Which effects a slot's phrase may have so that the verdict comes out as `verdict`,
+    decided by `deciding`: any SKIP beats any FLAG, and the deciding field is the first
+    rule that gave the winning outcome."""
     if verdict == "apply":
-        return {PASS}
-    order = [s for s, _ in SLOTS]
-    if order.index(slot) < order.index(deciding):
         return {PASS}
     if slot == deciding:
         return {verdict}
     if RULE_OF[slot] == RULE_OF[deciding]:
-        return {PASS}  # e.g. role type FLAG with a skipping track would make rule 3 ambiguous
-    return {PASS, FLAG, SKIP}  # after the deciding rule: anything, it can't change the verdict
+        return {PASS}  # keep rule 3's two slots from both firing
+    order = [s for s, _ in SLOTS]
+    before = order.index(slot) < order.index(deciding)
+    if verdict == "skip":
+        return {PASS, FLAG} if before else {PASS, FLAG, SKIP}  # a FLAG anywhere can't beat the SKIP
+    return {PASS} if before else {PASS, FLAG}  # FLAG: no SKIP anywhere, and no earlier FLAG
 
 
 def least_used(rng, phrases, used):

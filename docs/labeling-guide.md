@@ -44,7 +44,7 @@ This distinction runs through every field:
 
 ## The verdict rules, in order
 
-Walk the rules top to bottom. **The first rule that fires is the verdict, and its field is the deciding field.** Later rules don't matter once one fires. For example, a senior role that also requires a PhD is SKIP on **degree** (rule 4), not level (rule 5).
+Check every rule. **If any rule says SKIP, the verdict is SKIP; otherwise, if any says FLAG, it's FLAG; otherwise APPLY.** The deciding field is the first rule, top to bottom, that gave that verdict. For example, a senior role that only *prefers* an MS is SKIP on **level** (rule 5): the degree FLAG leaves nothing to decide once the level rules the posting out. And a senior role that also requires a PhD is SKIP on **degree** (rule 4), not level, since both SKIP and degree comes first.
 
 Every example below is made up.
 
@@ -239,7 +239,7 @@ The order matches what `triage label` asks:
 | Locations | `;`-separated, or `-` | as written |
 | Remote | `y` / `n` | hybrid = `n` |
 | Role type | `s` `m` `d` `x` `f` `o` `a` | rule 3 table |
-| Verdict | `a` apply · `f` flag · `s` skip | first rule that fires |
+| Verdict | `a` apply · `f` flag · `s` skip | any SKIP, else any FLAG, else APPLY |
 | Deciding field | `t` role type · `k` track · `d` degree · `l` level · `e` experience · `g` graduation · `c` location · `v` couldn't verify | not asked for APPLY |
 | Notes | free text, or Enter | write one for every hard case |
 

@@ -83,11 +83,18 @@ def test_each_rule(change, expected):
     assert outcome(**change) == expected
 
 
-def test_first_rule_to_fire_decides():
-    # Senior and PhD-required: degree (rule 4) comes before level (rule 5).
+def test_any_skip_beats_any_flag():
+    # A preferred MS (FLAG) on a senior role (SKIP): nothing left for a person to decide.
+    assert outcome(degree="masters", degree_strength="preferred", role_level="senior") == ("skip", "role_level")
+    # Ambiguous role (FLAG) and an out-of-profile track (SKIP).
+    assert outcome(role_type="ambiguous", track="other") == ("skip", "track")
+
+
+def test_order_picks_the_reason_among_equals():
+    # Two SKIPs: degree (rule 4) comes before level (rule 5).
     assert outcome(role_level="senior", degree="phd", degree_strength="required") == ("skip", "degree")
-    # Ambiguous role and an out-of-profile track: role type comes first.
-    assert outcome(role_type="ambiguous", track="other") == ("flag", "role_type")
+    # Two FLAGs: level comes before graduation.
+    assert outcome(role_level="unclear", grad_start="2027-12", grad_end="2028-06") == ("flag", "role_level")
 
 
 def test_reason_quotes_the_deciding_field():
@@ -97,10 +104,31 @@ def test_reason_quotes_the_deciding_field():
     assert v == Verdict("skip", "experience", "3+ years of professional experience required")
 
 
-def test_unverified_quote_flags_before_any_rule():
-    quotes = {"degree": "MS required", "location": "Seattle"}
-    v = decide(OK | {"role_type": "other"}, PROFILE, quotes, unverified={"location", "degree"})
+def test_verified_skip_beats_an_unverified_quote():
+    quotes = {"role_type": "Account Executive", "degree": "MS required"}
+    v = decide(OK | {"role_type": "other"}, PROFILE, quotes, unverified={"degree"})
+    assert v == Verdict("skip", "role_type", "Account Executive")
+
+
+def test_unverified_quote_flags_when_no_verified_rule_skips():
+    quotes = {"degree": "MS required", "location": "Seattle", "role_level": "a range of levels"}
+    v = decide(OK | {"role_level": "unclear"}, PROFILE, quotes, unverified={"location", "degree"})
     assert v == Verdict("flag", "quote", "MS required")  # degree comes before location
+
+
+def test_unverified_value_cannot_skip():
+    v = decide(OK | {"degree": "masters", "degree_strength": "required"}, PROFILE, unverified={"degree"})
+    assert v.verdict == "flag" and v.field == "quote"
+
+
+def test_unverified_track_sets_location_aside():
+    # Boston skips unless the track is spring co-op, so an untraced track can't decide it either way.
+    v = decide(OK | {"track": "summer_2027", "locations": "Boston, MA"}, PROFILE, unverified={"track"})
+    assert (v.verdict, v.field) == ("flag", "quote")
+
+
+def test_unusable_form_flags():
+    assert decide({}, PROFILE, unverified={"form"}) == Verdict("flag", "quote", None)
 
 
 def test_rules_read_the_profile_not_constants():

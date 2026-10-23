@@ -114,7 +114,7 @@ def normalize(text):
 
 def problems(e, text):
     """Field name -> what's wrong with it. Empty means every value traces to the posting.
-    These fields get one retry; any still listed after it make the verdict FLAG."""
+    These fields get one retry; any still listed after it can't decide the verdict (rules.decide)."""
     haystack = normalize(text)
     found = {}
     fields = to_fields(e)
