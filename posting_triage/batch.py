@@ -10,6 +10,7 @@ Those requests become the next round's batch; round 2 holds the pipeline's retri
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 from anthropic.types import Message
 
@@ -97,8 +98,7 @@ def advance(client, run_dir, postings, solve, log=print):
             )
             write_atomic(submitted, json.dumps({"batch_id": batch.id, "custom_ids": sorted(needed)}))
             log(f"{run_dir.name}: submitted round {k}, {len(needed)} requests (batch {batch.id})")
-            return None
-        info = json.loads(submitted.read_text())
+        info = json.loads(submitted.read_text())  # just submitted, or by an earlier run
         if set(info["custom_ids"]) != set(needed):
             raise RuntimeError(f"{run_dir}: round {k} was submitted for other postings; use a new run name")
         batch = client.messages.batches.retrieve(info["batch_id"])
@@ -123,3 +123,30 @@ def token_totals(run_dir):
                 for key in totals:
                     totals[key] += getattr(m.usage, key) or 0
     return totals
+
+
+class Immediate:
+    """Stands in for client.messages.batches, sending each request right away through
+    client.messages.create: full price, no waiting. The pilot uses it, so a handful of
+    postings go through exactly the code and saved files a batch run does. Errors aren't
+    caught: on a pilot, a rejected request should stop the run, not be retried."""
+
+    def __init__(self, client):
+        self.client, self.batches = client, {}
+
+    def create(self, requests):
+        batch_id = f"immediate_{len(self.batches) + 1}"
+        self.batches[batch_id] = [(r["custom_id"], self.client.messages.create(**r["params"])) for r in requests]
+        return SimpleNamespace(id=batch_id)
+
+    def retrieve(self, batch_id):
+        return SimpleNamespace(processing_status="ended")
+
+    def results(self, batch_id):
+        for custom_id, message in self.batches[batch_id]:
+            yield SimpleNamespace(custom_id=custom_id, result=SimpleNamespace(type="succeeded", message=message))
+
+
+def immediate(client):
+    """A client whose batches run immediately; pass it to advance() for a pilot."""
+    return SimpleNamespace(messages=SimpleNamespace(batches=Immediate(client)))

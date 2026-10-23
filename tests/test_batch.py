@@ -1,13 +1,14 @@
 """The batch runner, against a fake Batches API: rounds, resuming, retries, and saved results."""
 
 import json
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from anthropic.types import Message
 
-from posting_triage.batch import Pending, Replay, advance, load_saved, token_totals
+from posting_triage.batch import Pending, Replay, advance, immediate, load_saved, token_totals
 from posting_triage.direct import direct_verdict
 from posting_triage.extract import pipeline_verdict
 from posting_triage.profile import load_profile
@@ -143,3 +144,20 @@ def test_saved_responses_and_token_totals(tmp_path):
     assert rounds == 1 and set(saved) == set(TEXTS)
     assert token_totals(tmp_path)["input_tokens"] == 600
     assert token_totals(tmp_path)["output_tokens"] == 120
+
+
+def test_immediate_mode_finishes_in_one_call_with_the_same_saved_files(tmp_path):
+    first = sorted(TEXTS)[0]
+    calls = Counter()
+
+    def create(**params):
+        pid = next(p for p, text in TEXTS.items() if text in params["messages"][0]["content"])
+        calls[pid] += 1
+        return bad_quote(pid) if (pid, calls[pid]) == (first, 1) else good(pid)
+
+    client = immediate(SimpleNamespace(messages=SimpleNamespace(create=create)))
+    out = advance(client, tmp_path, TEXTS, pipeline, log=lambda s: None)
+    assert out is not None and sum(calls.values()) == 7  # 6 postings + 1 retry, no waiting
+    assert load_saved(tmp_path)[1] == 2
+    for pid, v in out.items():
+        assert v.verdict == BY_ID[pid]["gold_verdict"]
