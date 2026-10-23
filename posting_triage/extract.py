@@ -146,7 +146,7 @@ def problems(e, text):
 
 # The labeling guide's field definitions, restated for a reader. It never sees the
 # profile (the rules apply that) or the synthetic phrase library (that's the answer key).
-SYSTEM = """\
+INTRO = """\
 You read one job posting and fill in a form about who can apply. You do not judge whether anyone should apply.
 
 For every field, give the value and the exact words from the posting it came from:
@@ -155,6 +155,10 @@ For every field, give the value and the exact words from the posting it came fro
 - If the posting never mentions a field, set its value to null and its quotes to an empty list. Do not guess.
 - If the posting mentions it but the wording could go either way, give the value and mark it "preferred" (or "unclear" for role level).
 
+"""
+
+# Shared with the direct-verdict prompt, so both approaches read postings by the same definitions.
+FIELD_GUIDE = """\
 Fields:
 
 role_type (decide from the title first, then the description)
@@ -207,6 +211,7 @@ location
 - places: every location listed, as written. An empty list if none is listed.
 - remote: true only if fully remote work is allowed ("Remote", "Remote (US)", "remote-first"). Hybrid is false.
 """
+SYSTEM = INTRO + FIELD_GUIDE
 
 
 def user_message(text, retry_note=None):
@@ -239,14 +244,19 @@ class ExtractionError(Exception):
     """The model returned no usable form (a refusal, or output cut off)."""
 
 
-def parse(message):
-    """The Extraction in a response, or ExtractionError."""
+def response_text(message):
+    """The JSON text of a structured-output response, or ExtractionError."""
     if message.stop_reason != "end_turn":
         raise ExtractionError(f"stop_reason {message.stop_reason}")
     text = next((b.text for b in message.content if b.type == "text"), None)
     if text is None:
         raise ExtractionError("no text in the response")
-    return Extraction.model_validate_json(text)
+    return text
+
+
+def parse(message):
+    """The Extraction in a response, or ExtractionError."""
+    return Extraction.model_validate_json(response_text(message))
 
 
 def extract(text, call, model, effort="medium"):
