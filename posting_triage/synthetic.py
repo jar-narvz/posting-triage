@@ -7,6 +7,7 @@ so its gold answers never come from the rules module. See docs/design.md.
 """
 
 import random
+from collections import Counter
 from dataclasses import dataclass, field
 
 PASS, FLAG, SKIP = "pass", "flag", "skip"
@@ -271,8 +272,16 @@ def wanted_effects(slot, verdict, deciding):
     return {PASS, FLAG, SKIP}  # after the deciding rule: anything, it can't change the verdict
 
 
-def pick_phrases(rng, kind, verdict, deciding):
-    """One phrase per slot for this scenario, or None if this kind can't produce it."""
+def least_used(rng, phrases, used):
+    """A random one of the hard phrases whose tag the benchmark has used least so far, so
+    every hard case gets enough postings for its accuracy row to mean something."""
+    fewest = min(used[p.hard] for p in phrases)
+    return rng.choice([p for p in phrases if used[p.hard] == fewest])
+
+
+def pick_phrases(rng, kind, verdict, deciding, used):
+    """One phrase per slot for this scenario, or None if this kind can't produce it.
+    `used` counts the hard-case tags in the postings built so far."""
     chosen = {}
     for slot, phrases in SLOTS:
         wanted = wanted_effects(slot, verdict, deciding)
@@ -282,15 +291,15 @@ def pick_phrases(rng, kind, verdict, deciding):
         hard = [p for p in fits if p.hard]
         easy = [p for p in fits if not p.hard]
         # Hard phrases only when the dice say so, or when nothing else fits (e.g. "Data & ML" for a role-type FLAG).
-        chosen[slot] = rng.choice(hard) if hard and (not easy or rng.random() < HARD_PICK.get(slot, HARD_PICK_DEFAULT)) else rng.choice(easy)
+        chosen[slot] = least_used(rng, hard, used) if hard and (not easy or rng.random() < HARD_PICK.get(slot, HARD_PICK_DEFAULT)) else rng.choice(easy)
     return chosen
 
 
-def build_posting(rng, index, verdict, deciding):
+def build_posting(rng, index, verdict, deciding, used):
     kinds = [INTERN, FULLTIME]
     rng.shuffle(kinds)
     for kind in kinds:
-        chosen = pick_phrases(rng, kind, verdict, deciding)
+        chosen = pick_phrases(rng, kind, verdict, deciding, used)
         if chosen:
             break
     else:
@@ -348,4 +357,8 @@ def generate(n=200, seed=2027):
     rng = random.Random(seed)
     scenarios = plan_scenarios(n)
     rng.shuffle(scenarios)
-    return [build_posting(rng, i, verdict, deciding) for i, (verdict, deciding) in enumerate(scenarios, 1)]
+    used, postings = Counter(), []
+    for i, (verdict, deciding) in enumerate(scenarios, 1):
+        postings.append(build_posting(rng, i, verdict, deciding, used))
+        used.update(postings[-1]["hard"])
+    return postings

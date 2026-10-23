@@ -1,13 +1,14 @@
 """Checks on generated postings: the answer key must agree with the labeling guide's
 policy (written separately in guide_policy.py), and every quote must be real text."""
 
+import random
 from collections import Counter
 
 import pytest
 
 from guide_policy import policy_verdict
 from posting_triage.label import LABEL_COLUMNS
-from posting_triage.synthetic import DECIDERS, generate, plan_scenarios
+from posting_triage.synthetic import DECIDERS, PASS, P, generate, least_used, plan_scenarios
 
 POSTINGS = generate()
 
@@ -55,6 +56,13 @@ def test_hard_cases_are_common_but_not_everywhere():
     assert 40 <= with_hard <= 150
     tags = Counter(tag for p in POSTINGS for tag in p["hard"])
     assert min(tags.values()) >= 5, tags
+
+
+def test_hard_picks_go_to_the_least_used_case():
+    rng = random.Random(0)
+    a, b1, b2 = P("A", PASS, hard="a"), P("B1", PASS, hard="b"), P("B2", PASS, hard="b")
+    picks = {least_used(rng, [a, b1, b2], Counter({"a": 3, "b": 1})).text for _ in range(50)}
+    assert picks == {"B1", "B2"}  # only the rarer case, and either of its phrases
 
 
 def test_ids_and_titles():
