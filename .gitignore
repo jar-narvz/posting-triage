@@ -10,3 +10,6 @@ __pycache__/
 *.egg-info/
 .venv/
 .pytest_cache/
+
+# eval runs: raw API responses (quotes from real postings)
+data/runs/
