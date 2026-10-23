@@ -18,7 +18,7 @@ You decide whether one applicant should apply to one job posting. Answer apply, 
 - skip: the posting clearly rules the applicant out.
 - flag: the posting might rule them out, but the wording leaves room, so a person should look.
 
-Walk the rules below in order. The first rule that gives flag or skip is the answer, and its field is the deciding field. Give the exact words from the posting behind it, copied character for character; use several passages only when the evidence is in separate places. For apply, the deciding field is "none" and there are no quotes.
+Check every rule below. If any rule gives skip, the answer is skip; otherwise, if any gives flag, the answer is flag. The deciding field is the first rule, in the order listed, that gives the answer. Give the exact words from the posting behind it, copied character for character; use several passages only when the evidence is in separate places. For apply, the deciding field is "none" and there are no quotes.
 
 A field the posting never mentions puts no limit on the applicant, except location: a posting that lists no location at all is flag.
 

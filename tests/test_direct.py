@@ -37,6 +37,10 @@ def test_rules_are_listed_in_the_rules_module_order():
     assert positions == sorted(positions)
 
 
+def test_prompt_says_skip_beats_flag_like_the_rules_module():
+    assert "If any rule gives skip, the answer is skip; otherwise, if any gives flag" in system(PROFILE)
+
+
 def test_deciding_fields_are_the_rule_fields_plus_none():
     allowed = DirectAnswer.model_json_schema()["properties"]["deciding_field"]["enum"]
     assert set(allowed) == set(RULE_ORDER) | {"none"}
