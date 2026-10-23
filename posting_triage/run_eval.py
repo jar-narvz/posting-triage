@@ -12,7 +12,7 @@ from pathlib import Path
 
 from posting_triage import cache
 from posting_triage.baseline import baseline_verdict
-from posting_triage.batch import RUNS_DIR, advance, check_texts, immediate, load_saved, step, token_totals
+from posting_triage.batch import RUNS_DIR, advance, check_requests, immediate, load_saved, step, token_totals
 from posting_triage.direct import direct_verdict
 from posting_triage.evaluate import FIELD_COLUMNS, VERDICTS, field_accuracy, reason_accuracy, score
 from posting_triage.extract import extract, pipeline_verdict, to_fields
@@ -67,9 +67,10 @@ def texts(postings):
 
 def saved_results(run_root, approach, model, profile, postings):
     """{id: Verdict} if the run is complete, else (done, total)."""
-    check_texts(run_dir(run_root, approach, model), texts(postings))
+    solve = solvers(profile, model)[approach]
+    check_requests(run_dir(run_root, approach, model), texts(postings), solve)
     saved, _ = load_saved(run_dir(run_root, approach, model))
-    done, needed = step(texts(postings), solvers(profile, model)[approach], saved)
+    done, needed = step(texts(postings), solve, saved)
     return done if not needed else (len(done), len(done) + len(needed))
 
 
@@ -78,7 +79,7 @@ def saved_fields(run_root, model, postings):
     def solve(text, call):
         return extract(text, call, model, EFFORT)[0]
 
-    check_texts(run_dir(run_root, "pipeline", model), texts(postings))
+    check_requests(run_dir(run_root, "pipeline", model), texts(postings), solve)  # extract builds the pipeline's first request
     saved, _ = load_saved(run_dir(run_root, "pipeline", model))
     done, _ = step(texts(postings), solve, saved)
     return {pid: to_fields(e) if e else None for pid, e in done.items()}

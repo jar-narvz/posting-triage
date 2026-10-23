@@ -110,7 +110,7 @@ def test_report_refuses_runs_saved_for_other_posting_text(tmp_path, cache_dir, m
     synthetic = generate(n=10, seed=7)
     monkeypatch.setattr("test_batch.BY_ID", {p["id"]: p for p in synthetic})
     run_llm(perfect_client(synthetic), tmp_path, PROFILE, synthetic, [MODEL], log=lambda s: None)
-    with pytest.raises(RuntimeError, match="posting text changed"):
+    with pytest.raises(RuntimeError, match="changed since these responses were saved"):
         report(10, 8, PROFILE, [], CANDIDATES, tmp_path, [MODEL])  # same ids, another seed's postings
 
 

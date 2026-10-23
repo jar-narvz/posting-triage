@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from anthropic.types import Message
 
-from posting_triage.batch import Pending, Replay, advance, check_texts, immediate, load_saved, token_totals
+from posting_triage.batch import Pending, Replay, advance, check_requests, immediate, load_saved, token_totals
 from posting_triage.direct import direct_verdict
 from posting_triage.extract import pipeline_verdict
 from posting_triage.profile import load_profile
@@ -141,23 +141,33 @@ def test_changed_posting_text_is_refused(tmp_path):
     client, batches = client_for(lambda pid, k: good(pid))
     advance(client, tmp_path, TEXTS, pipeline, log=lambda s: None)
     pid = sorted(TEXTS)[0]
-    with pytest.raises(RuntimeError, match=f"posting text changed.*{pid}"):
+    with pytest.raises(RuntimeError, match=f"changed since these responses were saved.*{pid}"):
         advance(client, tmp_path, TEXTS | {pid: TEXTS[pid] + " edited"}, pipeline, log=lambda s: None)
     assert len(batches.created) == 1  # nothing sent for the edited text
 
 
+def test_changed_model_or_prompt_is_refused(tmp_path):
+    client, batches = client_for(lambda pid, k: good(pid))
+    advance(client, tmp_path, TEXTS, pipeline, log=lambda s: None)
+    other_model = lambda text, call: pipeline_verdict(text, PROFILE, call, "m2")
+    with pytest.raises(RuntimeError, match="prompt, model, or settings changed"):
+        advance(client, tmp_path, TEXTS, other_model, log=lambda s: None)
+    assert len(batches.created) == 1
+
+
 def test_new_postings_can_join_a_run_and_reading_records_nothing(tmp_path):
-    check_texts(tmp_path, {"a": "one"})
-    assert not (tmp_path / "texts.json").exists()
-    check_texts(tmp_path, {"a": "one"}, record=True)
-    check_texts(tmp_path, {"a": "one", "b": "two"}, record=True)  # e.g. a hand label added later
-    assert set(json.loads((tmp_path / "texts.json").read_text())) == {"a", "b"}
+    a, b = dict(list(TEXTS.items())[:1]), dict(list(TEXTS.items())[:2])
+    check_requests(tmp_path, a, pipeline)
+    assert not (tmp_path / "requests.json").exists()
+    check_requests(tmp_path, a, pipeline, record=True)
+    check_requests(tmp_path, b, pipeline, record=True)  # e.g. a hand label added later
+    assert set(json.loads((tmp_path / "requests.json").read_text())) == set(b)
 
 
-def test_a_run_saved_before_text_checks_is_refused(tmp_path):
+def test_a_run_saved_before_request_checks_is_refused(tmp_path):
     (tmp_path / "round1.batch.json").write_text("{}")
-    with pytest.raises(RuntimeError, match="without texts.json"):
-        check_texts(tmp_path, TEXTS)
+    with pytest.raises(RuntimeError, match="without requests.json"):
+        check_requests(tmp_path, TEXTS, pipeline)
 
 
 def test_saved_responses_and_token_totals(tmp_path):

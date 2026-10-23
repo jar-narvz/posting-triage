@@ -73,30 +73,38 @@ def load_saved(run_dir):
     return saved, rounds
 
 
-def text_hash(text):
-    return hashlib.sha256(text.encode()).hexdigest()
+def first_request_hash(text, solve):
+    """Hash of the first request `solve` sends for this posting, built without calling
+    the API. It holds the posting text, prompt, model, and settings, so a change to any of
+    them changes the hash. Later requests (retries) are built from the same inputs."""
+    try:
+        solve(text, Replay([]))
+    except Pending as p:
+        return hashlib.sha256(json.dumps(p.params, sort_keys=True).encode()).hexdigest()
+    return ""  # sends no request, so there is nothing to replay
 
 
-def check_texts(run_dir, postings, record=False):
-    """Saved responses are matched to postings by id, so a posting whose text changed
-    (a new generator, a re-fetched page) would silently get answers meant for its old
-    text. texts.json keeps a hash of each posting's text as the run first saw it.
-    Raises if a known id's text has changed; with record=True, adds new ids."""
+def check_requests(run_dir, postings, solve, record=False):
+    """Saved responses are matched to postings by id, so a posting whose text, prompt,
+    model, or settings changed would silently get answers meant for the old request.
+    requests.json keeps a hash of each posting's first request as the run first sent it.
+    Raises if a known id's request has changed; with record=True, adds new ids."""
     run_dir = Path(run_dir)
-    path = run_dir / "texts.json"
+    path = run_dir / "requests.json"
     if path.exists():
         known = json.loads(path.read_text())
     elif (run_dir / "round1.batch.json").exists():
-        raise RuntimeError(f"{run_dir}: saved without texts.json, so changed postings can't be caught; "
+        raise RuntimeError(f"{run_dir}: saved without requests.json, so changed requests can't be caught; "
                            "use a new run name")
     else:
         known = {}
-    changed = sorted(pid for pid, text in postings.items() if pid in known and known[pid] != text_hash(text))
+    hashes = {pid: first_request_hash(text, solve) for pid, text in postings.items()}
+    changed = sorted(pid for pid, h in hashes.items() if pid in known and known[pid] != h)
     if changed:
         shown = ", ".join(changed[:5]) + (" …" if len(changed) > 5 else "")
-        raise RuntimeError(f"{run_dir}: posting text changed since these responses were saved ({shown}); "
-                           "use a new run name")
-    new = {pid: text_hash(text) for pid, text in postings.items() if pid not in known}
+        raise RuntimeError(f"{run_dir}: posting text, prompt, model, or settings changed since these responses "
+                           f"were saved ({shown}); use a new run name")
+    new = {pid: h for pid, h in hashes.items() if pid not in known}
     if record and new:
         run_dir.mkdir(parents=True, exist_ok=True)
         write_atomic(path, json.dumps(known | new, indent=1, sort_keys=True))
@@ -113,7 +121,7 @@ def advance(client, run_dir, postings, solve, log=print):
     posting is finished, else None: run it again later and it picks up where it stopped."""
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
-    check_texts(run_dir, postings, record=True)
+    check_requests(run_dir, postings, solve, record=True)
     while True:
         saved, rounds = load_saved(run_dir)
         done, needed = step(postings, solve, saved)
