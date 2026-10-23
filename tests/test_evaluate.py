@@ -2,7 +2,7 @@
 
 import pytest
 
-from posting_triage.evaluate import score
+from posting_triage.evaluate import field_accuracy, reason_accuracy, score
 
 # 6 postings: 3 gold apply. Predicted apply on 4 of them, 2 truly eligible.
 GOLD = ["apply", "apply", "apply", "flag", "skip", "skip"]
@@ -68,3 +68,38 @@ def test_mismatched_lengths_are_rejected():
         score(["apply"], [])
     with pytest.raises(ValueError):
         score(["apply"], ["apply"], tags=[])
+
+
+GOLD_ROW = {"role_type": "swe", "track": "new_grad", "degree": "masters", "degree_strength": "preferred",
+            "role_level": "entry", "experience_years": "", "experience_strength": "", "grad_start": "",
+            "grad_end": "2027-06", "locations": "Seattle, WA; San Jose, CA", "remote": "false"}
+
+
+def test_field_accuracy_needs_every_column_of_a_field():
+    wrong_strength = GOLD_ROW | {"degree_strength": "required"}
+    acc = field_accuracy([GOLD_ROW, GOLD_ROW], [GOLD_ROW, wrong_strength])
+    assert acc["degree"] == (1, 2)
+    assert acc["role_type"] == (2, 2)
+
+
+def test_location_order_and_case_do_not_matter_but_places_do():
+    reordered = GOLD_ROW | {"locations": "san jose, ca;Seattle, WA"}
+    missing = GOLD_ROW | {"locations": "San Jose, CA"}
+    assert field_accuracy([GOLD_ROW] * 2, [reordered, missing])["location"] == (1, 2)
+
+
+def test_no_extraction_is_wrong_on_every_field():
+    assert set(field_accuracy([GOLD_ROW], [None]).values()) == {(0, 1)}
+
+
+def test_reason_accuracy_needs_verdict_and_field():
+    gold = [("skip", "degree"), ("flag", "location"), ("apply", "")]
+    predicted = [("skip", "degree"), ("flag", "experience"), ("apply", "")]
+    assert reason_accuracy(gold, predicted) == (2, 3)
+
+
+def test_field_and_reason_inputs_must_line_up():
+    with pytest.raises(ValueError):
+        field_accuracy([GOLD_ROW], [])
+    with pytest.raises(ValueError):
+        reason_accuracy([("apply", "")], [])

@@ -1,4 +1,4 @@
-"""Score predicted verdicts against gold ones. Pure functions, no I/O.
+"""Score predicted verdicts (and extracted fields) against gold ones. Pure functions, no I/O.
 
 "apply" is the positive class: precision is the share of predicted applies that
 were truly eligible (a wrong apply wastes a tailored application), recall the
@@ -57,3 +57,43 @@ def score(gold, predicted, tags=None):
         confusion=Counter(pairs),
         by_tag={tag: (tag_correct[tag], tag_total[tag]) for tag in sorted(tag_total)},
     )
+
+
+# Per-field extraction accuracy: a rule's field is right only if all its columns match gold.
+FIELD_COLUMNS = {
+    "role_type": ("role_type",),
+    "track": ("track",),
+    "degree": ("degree", "degree_strength"),
+    "role_level": ("role_level",),
+    "experience": ("experience_years", "experience_strength"),
+    "graduation": ("grad_start", "grad_end"),
+    "location": ("locations", "remote"),
+}
+
+
+def places(locations):
+    return sorted(p.strip().lower() for p in locations.split(";") if p.strip())
+
+
+def same_value(column, gold, predicted):
+    if column == "locations":  # order and case of a list of places don't matter
+        return places(gold) == places(predicted)
+    return gold == predicted
+
+
+def field_accuracy(gold_rows, predicted_rows):
+    """{field: (right, total)}. A predicted row of None (no usable extraction) is wrong on every field."""
+    if len(gold_rows) != len(predicted_rows):
+        raise ValueError("gold and predicted rows must be the same length")
+    right = Counter()
+    for gold, predicted in zip(gold_rows, predicted_rows):
+        for field, columns in FIELD_COLUMNS.items():
+            right[field] += predicted is not None and all(same_value(c, gold[c], predicted[c]) for c in columns)
+    return {field: (right[field], len(gold_rows)) for field in FIELD_COLUMNS}
+
+
+def reason_accuracy(gold, predicted):
+    """(right, total) for verdict and deciding field together: right for the right reason."""
+    if len(gold) != len(predicted):
+        raise ValueError("gold and predicted must be the same length")
+    return sum(g == p for g, p in zip(gold, predicted)), len(gold)
