@@ -178,8 +178,9 @@ def report(n, seed, profile, labels, candidates, run_root=RUNS_DIR / "main", mod
     real = real_postings(labels, candidates)
     results, fields, incomplete = collect(run_root, profile, synthetic + real, models)
     lines = section(f"Synthetic benchmark: {n} postings, seed {seed}", synthetic, results, fields)
-    lines += section(f"Real spot check: {len(real)} hand-labeled postings (too few to rank approaches)",
-                     real, results, fields)
+    if real:
+        lines += section(f"Real spot check: {len(real)} hand-labeled postings (too few to rank approaches)",
+                         real, results, fields)
     for name, (done, total) in incomplete.items():
         lines.append(f"not finished: {name} ({done}/{total} postings answered)")
     return "\n".join(lines).rstrip()

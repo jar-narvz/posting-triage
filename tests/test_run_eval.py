@@ -92,12 +92,13 @@ def test_saved_runs_are_scored(tmp_path, monkeypatch):
     assert set(results["direct · haiku-5-5"].values()) == {("apply", "")}
 
 
-def test_report_has_both_sections_tables_and_is_repeatable(tmp_path, cache_dir, monkeypatch):
+def test_report_has_tables_and_is_repeatable(tmp_path, cache_dir, monkeypatch):
     synthetic = generate(n=10, seed=7)
     monkeypatch.setattr("test_batch.BY_ID", {p["id"]: p for p in synthetic})
     run_llm(perfect_client(synthetic), tmp_path, PROFILE, synthetic, [MODEL], log=lambda s: None)
     text = report(10, 7, PROFILE, [], CANDIDATES, tmp_path, [MODEL])
     assert "Synthetic benchmark: 10 postings, seed 7" in text
+    assert "Real spot check" not in text  # no labels passed, so no empty tables
     assert "pipeline extraction accuracy by field" in text
     assert "accuracy on postings with each hard case" in text
     pipeline_row = next(line for line in text.splitlines() if line.strip().startswith("pipeline · haiku"))
