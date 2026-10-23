@@ -147,7 +147,9 @@ If a lower degree is enough, the higher one is only preferred.
 
 > **Foo Systems — Senior Software Engineer** → `s` senior → **SKIP**, deciding field **level**.
 
-> **Bar Cloud — Software Engineer** (no level in the title; "we're open to new grads and engineers with a few years of experience") → `u` unclear → **FLAG**, deciding field **level**.
+> **Bar Cloud — Software Engineer** (no level in the title; "the level for this role will be set based on your interviews") → `u` unclear → **FLAG**, deciding field **level**.
+
+> **Baz Labs — Software Engineer** (no level in the title; "we're open to new grads and engineers with a few years of experience") → `g` new grad, the **lowest** level listed → level passes.
 
 | Posting says | Level |
 | --- | --- |

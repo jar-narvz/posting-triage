@@ -8,7 +8,7 @@ import pytest
 
 from guide_policy import policy_verdict
 from posting_triage.label import LABEL_COLUMNS
-from posting_triage.synthetic import DECIDERS, PASS, P, generate, least_used, plan_scenarios
+from posting_triage.synthetic import DECIDERS, PASS, UNCLEAR_LEVEL_TEXT, P, generate, least_used, plan_scenarios
 
 POSTINGS = generate()
 
@@ -63,6 +63,14 @@ def test_hard_picks_go_to_the_least_used_case():
     a, b1, b2 = P("A", PASS, hard="a"), P("B1", PASS, hard="b"), P("B2", PASS, hard="b")
     picks = {least_used(rng, [a, b1, b2], Counter({"a": 3, "b": 1})).text for _ in range(50)}
     assert picks == {"B1", "B2"}  # only the rarer case, and either of its phrases
+
+
+def test_unclear_level_sentence_names_no_level():
+    # Any level it named would be "the lowest level listed" (the guide's rule 5), not unclear.
+    words = set(UNCLEAR_LEVEL_TEXT.lower().replace(".", "").split())
+    level_words = {"intern", "internship", "co-op", "grad", "grads", "graduate", "graduates", "junior", "entry",
+                   "associate", "mid", "mid-level", "senior", "sr", "staff", "principal", "lead", "experienced"}
+    assert not words & level_words
 
 
 def test_ids_and_titles():

@@ -104,8 +104,9 @@ LEVEL = [
     P("Staff {role}", SKIP, [FULLTIME], role_level="senior"),
     P("{role} II", SKIP, [FULLTIME], role_level="mid"),
 ]
-# The sentence that makes a level-less title genuinely unclear.
-UNCLEAR_LEVEL_TEXT = "We're open to candidates at a range of experience levels, from recent graduates to experienced engineers."
+# The sentence that makes a level-less title genuinely unclear. It names no level: a range
+# like "new grads to experienced engineers" reads as the lowest level listed, not unclear.
+UNCLEAR_LEVEL_TEXT = "The level for this role will be set based on your interviews."
 
 # Rule 3b: track, as a suffix on the title.
 TRACK = [
