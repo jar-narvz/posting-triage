@@ -171,7 +171,7 @@ role_type (decide from the title first, then the description)
 - ambiguous: the role genuinely splits between two of the types above, e.g. half data pipelines, half data science.
 
 track
-- new_grad: "New Grad", "University Grad", "2027 start", or any full-time entry-level role with no term named. For a full-time role with no term, quote the title.
+- new_grad: "New Grad", "University Grad", "2027 start", or any full-time role with no term named, whatever its level (level is role_level's job). For a full-time role with no term, quote the title.
 - summer_2027: a Summer 2027 internship, or an internship with no term named.
 - spring_coop: a Spring 2027 co-op.
 - other: fall or winter terms, part-time co-ops, any other term.

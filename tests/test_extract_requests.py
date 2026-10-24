@@ -45,6 +45,17 @@ def test_an_or_of_higher_degrees_records_the_lower():
     assert '"BS required, MS or PhD preferred": masters, preferred' in FIELD_GUIDE
 
 
+def test_a_full_time_role_with_no_term_is_new_grad_at_any_level():
+    # The generator gives every full-time title without a term track new_grad, Senior
+    # included (level is role_level's field). "entry-level" in this line made models leave
+    # a Senior posting's track blank.
+    line = next(l for l in FIELD_GUIDE.splitlines() if l.startswith("- new_grad:"))
+    assert "entry-level" not in line and "whatever its level" in line
+    senior = [p for p in generate(n=200, seed=2027)
+              if p["gold"]["role_level"] in ("senior", "mid") and " - " not in p["title"]]
+    assert senior and all(p["gold"]["track"] == "new_grad" for p in senior)
+
+
 def with_bad_quote():
     data = good()
     data["degree"] = {"value": "bachelors", "strength": "required", "quotes": ["Bachelor's degree required, invented"]}

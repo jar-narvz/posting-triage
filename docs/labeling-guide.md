@@ -93,7 +93,7 @@ How to pick the track:
 
 | Posting says | Track |
 | --- | --- |
-| "New Grad", "University Grad", "2027 start", full-time entry-level | `n` new grad |
+| "New Grad", "University Grad", "2027 start", any full-time role with no term named (at any level; level is rule 5) | `n` new grad |
 | "Summer 2027 Intern", or an internship with no term named | `s` summer 2027 |
 | "Spring 2027 Co-op" | `c` spring co-op |
 | fall or winter terms, part-time co-ops, any other term | `o` other term |
