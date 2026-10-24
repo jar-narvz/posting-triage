@@ -61,6 +61,7 @@ def test_clean_url_drops_only_tracking(url, cleaned):
         ("SF", True),
         ("NYC", True),
         ("Austin, TX", True),
+        ("USA, WA, Bellevue", True),  # Amazon and Workday write the country first
         ("Remote in USA", True),
         ("United States", True),
         ("London, UK", False),

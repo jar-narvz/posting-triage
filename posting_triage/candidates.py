@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from posting_triage.liveness import board_job
+from posting_triage.profile import city_first
 
 RAW = "https://raw.githubusercontent.com"
 SOURCES = {
@@ -152,7 +153,7 @@ def clean_section(heading):
 def is_us_location(location):
     """True if any of the listed locations is in the US (or plain/US remote)."""
     for place in location.split(";"):
-        place = place.strip()
+        place = city_first(place.strip())
         lower = place.lower()
         if lower in US_NAMES or (lower.startswith("remote") and re.search(r"\bus(a)?\b|united states", lower)):
             return True

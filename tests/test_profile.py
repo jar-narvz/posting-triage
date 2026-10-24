@@ -89,6 +89,8 @@ EXAMPLE_PLACES = ("Bay Area", "Los Angeles", "Remote")
         "SF",
         "san jose, ca",
         "San Jose, CA +2",
+        "US, CA, Santa Clara",  # Workday writes the country first
+        "USA, CA, Los Angeles",
         "Seattle, WA; San Jose, CA",  # one match is enough
         "El Segundo, CA",
         "Remote in USA",
@@ -108,6 +110,7 @@ def test_places_in_a_profile_region_match(location):
         "San Diego, CA",
         "New York City, NY",
         "Bellevue, WA; Austin, TX",
+        "USA, WA, Bellevue",
         "",
     ],
 )

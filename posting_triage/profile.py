@@ -96,10 +96,22 @@ def parse_profile(data):
     )
 
 
+COUNTRY_NAMES = {"us", "usa", "united states"}
+
+
+def city_first(place):
+    """"US, CA, Santa Clara" -> "Santa Clara, CA". Workday and Amazon write the country, then
+    the state, then the city; every other place comes back unchanged."""
+    parts = [p.strip() for p in place.split(",")]
+    if len(parts) == 3 and parts[0].lower() in COUNTRY_NAMES:
+        return f"{parts[2]}, {parts[1]}"
+    return place
+
+
 def place_matches(place, wanted):
     """True if one listed place ("Santa Clara, CA", "SF", "Remote in USA") falls in one
     profile location: a region above, "Remote", or any other name, taken as a city."""
-    place = re.sub(r"\s*\+\d+$", "", place.strip()).lower()  # "San Jose, CA +2": the 2 others aren't shown
+    place = city_first(re.sub(r"\s*\+\d+$", "", place.strip())).lower()  # "San Jose, CA +2": the 2 others aren't shown
     wanted = wanted.strip().lower()
     if wanted == "remote":
         return re.search(r"\bremote\b", place) is not None
