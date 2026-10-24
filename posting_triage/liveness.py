@@ -59,6 +59,16 @@ def board_job(url):
     return None
 
 
+def careers_page(url):
+    """Where to send someone when a posting is DEAD: the company's job board for Greenhouse,
+    Lever, and Ashby links, else the site's front page. The posting's own host is kept, so
+    EU boards and older Greenhouse hosts stay on the instance the company uses."""
+    parts = urlsplit(url)
+    job = board_job(url)
+    path = f"/{job.token}" if job else "/"
+    return f"{parts.scheme}://{parts.netloc.lower()}{path}"
+
+
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 
 

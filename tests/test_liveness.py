@@ -5,6 +5,7 @@ from posting_triage.liveness import (
     Browser,
     PostingText,
     board_job,
+    careers_page,
     fetch_from_board,
     fetch_posting,
     html_to_text,
@@ -51,6 +52,25 @@ def test_board_urls_are_recognized(url, expected):
 )
 def test_other_urls_go_to_the_browser(url):
     assert board_job(url) is None
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        ("https://job-boards.greenhouse.io/doordashusa/jobs/8263774", "https://job-boards.greenhouse.io/doordashusa"),
+        ("https://boards.greenhouse.io/embed/job_app?for=acme&token=456", "https://boards.greenhouse.io/acme"),
+        ("https://job-boards.eu.greenhouse.io/acme/jobs/123", "https://job-boards.eu.greenhouse.io/acme"),
+        (f"https://jobs.lever.co/kobie/{UUID}/apply", "https://jobs.lever.co/kobie"),
+        (f"https://jobs.eu.lever.co/acme/{UUID}", "https://jobs.eu.lever.co/acme"),
+        (f"https://jobs.ashbyhq.com/crusoe/{UUID}/application?embed=true", "https://jobs.ashbyhq.com/crusoe"),
+        ("https://netflix.wd108.myworkdayjobs.com/en-US/netflix/job/Los-Gatos/SWE-Intern_JR42989",
+         "https://netflix.wd108.myworkdayjobs.com/"),
+        ("https://careers.withwaymo.com/jobs?gh_jid=8202025", "https://careers.withwaymo.com/"),
+        ("https://Lifeattiktok.com/search/7512345", "https://lifeattiktok.com/"),
+    ],
+)
+def test_careers_page_is_the_board_or_the_front_page(url, expected):
+    assert careers_page(url) == expected
 
 
 def test_every_board_url_in_candidates_parses():
