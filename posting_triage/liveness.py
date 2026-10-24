@@ -134,6 +134,9 @@ class PostingText:
     detail: str = ""  # e.g. "HTTP 404", "not on board"
 
 
+BOARD_GONE = "board HTTP 404"
+
+
 def get_json(url, timeout=20):
     """GET a JSON API. Returns (HTTP status, parsed body or None); status 0 = no response."""
     request = urllib.request.Request(url, headers={"User-Agent": "posting-triage"})
@@ -165,8 +168,7 @@ def _greenhouse(job, get):
 
 
 def _lever(job, get):
-    host = "api.eu.lever.co" if job.eu else "api.lever.co"
-    status, data = get(f"https://{host}/v0/postings/{job.token}/{job.job_id}")
+    status, data = get(f"https://{lever_host(job)}/v0/postings/{job.token}/{job.job_id}")
     if status == 404:
         return PostingText("not_found", "lever", detail="HTTP 404")
     if status != 200 or not data:
@@ -194,7 +196,7 @@ def _ashby(job, get):
     # Ashby has no single-job endpoint: fetch the whole board and find the job in it.
     status, data = get(f"https://api.ashbyhq.com/posting-api/job-board/{job.token}")
     if status == 404:
-        return PostingText("not_found", "ashby", detail="board HTTP 404")
+        return PostingText("not_found", "ashby", detail=BOARD_GONE)
     if status != 200 or not data:
         return PostingText("unreadable", "ashby", detail=f"HTTP {status}")
     match = next(
@@ -291,3 +293,31 @@ def fetch_posting(url, browser=None, get=get_json):
     if browser is None:
         return PostingText("unreadable", "browser", detail="no board API; browser not started")
     return browser.fetch(url)
+
+
+def live_careers_page(url, posting, get=get_json):
+    """careers_page(url) for a DEAD posting, or None when the company's whole board is gone
+    too (it moved to another system, say), so we never link a dead board. Only board links
+    are checked; others get the front page unchecked. Only a 404 counts as gone: a board
+    that won't answer keeps its link."""
+    job = board_job(url)
+    if job is None:
+        return careers_page(url)
+    if job.board == "ashby":
+        gone = posting.detail == BOARD_GONE  # the Ashby fetch already downloaded the board
+    else:
+        status, _ = get(board_api(job))
+        gone = status == 404
+    return None if gone else careers_page(url)
+
+
+def board_api(job):
+    """The API URL for a company's whole board (Greenhouse, Lever)."""
+    if job.board == "greenhouse":
+        return f"https://boards-api.greenhouse.io/v1/boards/{job.token}"
+    return f"https://{lever_host(job)}/v0/postings/{job.token}?limit=1"
+
+
+def lever_host(job):
+    return "api.eu.lever.co" if job.eu else "api.lever.co"
+

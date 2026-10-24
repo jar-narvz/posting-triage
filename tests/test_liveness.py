@@ -9,6 +9,7 @@ from posting_triage.liveness import (
     fetch_from_board,
     fetch_posting,
     html_to_text,
+    live_careers_page,
     tidy_text,
 )
 
@@ -124,6 +125,7 @@ def fake_get(responses):
 
 
 GH_URL = "https://boards-api.greenhouse.io/v1/boards/acme/jobs/123"
+WORKDAY_URL = "https://acme.wd1.myworkdayjobs.com/en-US/ext/job/SWE_JR1"
 
 
 def test_greenhouse_unescapes_content():
@@ -204,6 +206,45 @@ def test_real_greenhouse_404():
 
 def test_tidy_text_matches_html_to_text_shape():
     assert tidy_text("  Title \n\n\n   Body   text\n-\n- item ") == "Title\nBody text\n- item"
+
+
+
+GONE = PostingText("not_found", "greenhouse", detail="HTTP 404")
+
+
+@pytest.mark.parametrize("status, expected", [
+    (200, "https://job-boards.greenhouse.io/acme"),
+    (404, None),
+    (0, "https://job-boards.greenhouse.io/acme"),  # no answer is not proof the board is gone
+])
+def test_dead_greenhouse_posting_links_its_board_only_if_the_board_is_there(status, expected):
+    get = fake_get({"https://boards-api.greenhouse.io/v1/boards/acme": (status, None)})
+    assert live_careers_page("https://job-boards.greenhouse.io/acme/jobs/123", GONE, get) == expected
+    assert get.calls == ["https://boards-api.greenhouse.io/v1/boards/acme"]
+
+
+def test_dead_lever_posting_checks_the_board_on_its_own_instance():
+    get = fake_get({})
+    assert live_careers_page(f"https://jobs.eu.lever.co/acme/{UUID}", GONE, get) is None
+    assert get.calls == ["https://api.eu.lever.co/v0/postings/acme?limit=1"]
+
+
+@pytest.mark.parametrize("detail, expected", [
+    ("not on board", "https://jobs.ashbyhq.com/acme"),
+    ("board HTTP 404", None),
+])
+def test_dead_ashby_posting_needs_no_second_request(detail, expected):
+    get = fake_get({})
+    posting = PostingText("not_found", "ashby", detail=detail)
+    assert live_careers_page(f"https://jobs.ashbyhq.com/acme/{UUID}", posting, get) == expected
+    assert get.calls == []
+
+
+def test_dead_non_board_posting_gets_the_front_page_unchecked():
+    get = fake_get({})
+    posting = PostingText("not_found", "browser", detail="HTTP 404")
+    assert live_careers_page(WORKDAY_URL, posting, get) == "https://acme.wd1.myworkdayjobs.com/"
+    assert get.calls == []
 
 
 class FakeBrowser:
