@@ -30,3 +30,33 @@ Owner: Jared Narvaez (UC Berkeley CS, May 2027). This is a public portfolio repo
 
 ## Model choice
 Eval runs claude-haiku-5-5, claude-sonnet-5-5, and claude-opus-5-5. The tool defaults to the cheapest model within 5 points of the best apply-precision. Use the Batch API for eval runs.
+
+## Deployment work (added Oct 23, 2026) — work in progress
+This repo is still a work in progress. Before planning any deployment task, check what
+actually exists in the code; never assume a module or phase from the original plan is done.
+
+### Approved new dependencies
+fastapi, uvicorn[standard], httpx (for FastAPI's TestClient). Ask before adding anything else,
+including AWS SDKs (deploys use the AWS CLI inside GitHub Actions, not app code).
+
+### Proposed design decisions (confirm each with me before building on it)
+7. The API is a thin layer. Endpoints call the same functions the CLI calls; no verdict
+   logic lives in the API. The CLI and API share one response schema (pydantic).
+8. Live LLM calls are private. POST /triage requires a bearer token from an env var
+   (TRIAGE_API_TOKEN). The public GitHub Pages site stays static, with no live AI calls
+   (the original web-page spec). The API also has a per-token rate limit and a request timeout.
+9. The API refuses to fetch anything but public http(s) URLs: no localhost, private IP
+   ranges, or link-local addresses (e.g. the cloud metadata address 169.254.169.254).
+   This prevents server-side request forgery through the liveness checker.
+10. One Docker image runs both the CLI and the API.
+11. AWS: one region, one service. The image lives in ECR; the Anthropic key and API token
+    live in Secrets Manager; logs go to CloudWatch. GitHub Actions deploys using an OIDC
+    role, so no long-lived AWS keys exist anywhere.
+
+### AWS safety rules
+- Never create a billable AWS resource without first showing me the exact commands and the
+  expected monthly cost, and waiting for my OK.
+- The first AWS step is always a budget alert. Every resource gets a teardown command in
+  docs/deploy.md.
+- Never commit AWS account IDs, ARNs with account IDs, keys, or tokens. Use GitHub secrets
+  and variables.
