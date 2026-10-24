@@ -2,7 +2,12 @@
 
 import pytest
 
+from pathlib import Path
+
 from posting_triage.evaluate import field_accuracy, reason_accuracy, score
+from posting_triage.profile import load_profile
+
+PROFILE = load_profile(Path(__file__).parent.parent / "profile.example.yaml")
 
 # 6 postings: 3 gold apply. Predicted apply on 4 of them, 2 truly eligible.
 GOLD = ["apply", "apply", "apply", "flag", "skip", "skip"]
@@ -77,19 +82,40 @@ GOLD_ROW = {"role_type": "swe", "track": "new_grad", "degree": "masters", "degre
 
 def test_field_accuracy_needs_every_column_of_a_field():
     wrong_strength = GOLD_ROW | {"degree_strength": "required"}
-    acc = field_accuracy([GOLD_ROW, GOLD_ROW], [GOLD_ROW, wrong_strength])
+    acc = field_accuracy([GOLD_ROW, GOLD_ROW], [GOLD_ROW, wrong_strength], PROFILE)
     assert acc["degree"] == (1, 2)
     assert acc["role_type"] == (2, 2)
 
 
-def test_location_order_and_case_do_not_matter_but_places_do():
-    reordered = GOLD_ROW | {"locations": "san jose, ca;Seattle, WA"}
-    missing = GOLD_ROW | {"locations": "San Jose, CA"}
-    assert field_accuracy([GOLD_ROW] * 2, [reordered, missing])["location"] == (1, 2)
+def location_right(gold, predicted):
+    return field_accuracy([gold], [predicted], PROFILE)["location"] == (1, 1)
+
+
+def test_location_is_right_when_the_rule_reads_it_the_same_way():
+    # "Seattle, WA; San Jose, CA" passes the Bay Area profile, however the places are written.
+    assert location_right(GOLD_ROW, GOLD_ROW | {"locations": "USA, WA, Seattle; US, CA, San Jose"})
+    assert location_right(GOLD_ROW, GOLD_ROW | {"locations": "San Jose"})
+
+
+def test_location_is_wrong_when_the_rule_would_decide_differently():
+    assert not location_right(GOLD_ROW, GOLD_ROW | {"locations": "Seattle, WA"})  # pass -> skip
+    assert not location_right(GOLD_ROW, GOLD_ROW | {"locations": ""})  # pass -> flag
+    boston = GOLD_ROW | {"locations": "Boston, MA"}
+    assert not location_right(boston, boston | {"locations": "Boston; Los Angeles"})  # skip -> pass
+
+
+def test_location_needs_the_same_remote_flag():
+    assert not location_right(GOLD_ROW, GOLD_ROW | {"remote": "true"})
+
+
+def test_location_is_judged_with_the_gold_track():
+    # A spring co-op accepts any US location; a wrong track must not make location wrong too.
+    coop = GOLD_ROW | {"track": "spring_coop", "locations": "Austin, TX"}
+    assert location_right(coop, coop | {"track": "new_grad"})
 
 
 def test_no_extraction_is_wrong_on_every_field():
-    assert set(field_accuracy([GOLD_ROW], [None]).values()) == {(0, 1)}
+    assert set(field_accuracy([GOLD_ROW], [None], PROFILE).values()) == {(0, 1)}
 
 
 def test_reason_accuracy_needs_verdict_and_field():
@@ -100,6 +126,6 @@ def test_reason_accuracy_needs_verdict_and_field():
 
 def test_field_and_reason_inputs_must_line_up():
     with pytest.raises(ValueError):
-        field_accuracy([GOLD_ROW], [])
+        field_accuracy([GOLD_ROW], [], PROFILE)
     with pytest.raises(ValueError):
         reason_accuracy([("apply", "")], [])

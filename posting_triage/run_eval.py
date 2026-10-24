@@ -154,17 +154,17 @@ def format_tags(rows):
     return lines
 
 
-def format_fields(postings, fields):
+def format_fields(postings, fields, profile):
     lines = ["  pipeline extraction accuracy by field", "  " + " " * 22 + "".join(f"{f:>12}" for f in FIELD_COLUMNS)]
     for name, by_id in fields.items():
         answered = [p for p in postings if p["id"] in by_id]
-        acc = field_accuracy([p["gold"] for p in answered], [by_id[p["id"]] for p in answered])
+        acc = field_accuracy([p["gold"] for p in answered], [by_id[p["id"]] for p in answered], profile)
         lines.append(f"  {name:22}" + "".join(f"{right / total:>12.0%}" if total else f"{'n/a':>12}"
                                               for right, total in acc.values()))
     return lines
 
 
-def section(title, postings, results, fields):
+def section(title, postings, results, fields, profile):
     rows = {name: scored(postings, preds) for name, preds in results.items()}
     lines = format_scores(title, rows) + [""]
     for name, (s, _) in rows.items():
@@ -172,7 +172,7 @@ def section(title, postings, results, fields):
     if any(s.by_tag for s, _ in rows.values()):
         lines += format_tags(rows) + [""]
     if fields:
-        lines += format_fields(postings, fields) + [""]
+        lines += format_fields(postings, fields, profile) + [""]
     return lines
 
 
@@ -180,10 +180,10 @@ def report(n, seed, profile, labels, candidates, run_root=RUNS_DIR / "main", mod
     synthetic = generate(n=n, seed=seed)
     real = real_postings(labels, candidates)
     results, fields, incomplete = collect(run_root, profile, synthetic + real, models)
-    lines = section(f"Synthetic benchmark: {n} postings, seed {seed}", synthetic, results, fields)
+    lines = section(f"Synthetic benchmark: {n} postings, seed {seed}", synthetic, results, fields, profile)
     if real:
         lines += section(f"Real spot check: {len(real)} hand-labeled postings (too few to rank approaches)",
-                         real, results, fields)
+                         real, results, fields, profile)
     for name, (done, total) in incomplete.items():
         lines.append(f"not finished: {name} ({done}/{total} postings answered)")
     return "\n".join(lines).rstrip()

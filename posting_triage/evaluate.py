@@ -8,6 +8,8 @@ share of eligible postings that got an apply. FLAG and SKIP both count as "not a
 from collections import Counter
 from dataclasses import dataclass
 
+from posting_triage.rules import location
+
 VERDICTS = ("apply", "flag", "skip")
 
 
@@ -71,24 +73,24 @@ FIELD_COLUMNS = {
 }
 
 
-def places(locations):
-    return sorted(p.strip().lower() for p in locations.split(";") if p.strip())
+def same_field(field, gold, predicted, profile):
+    if field == "location":
+        # Scored by what the location rule makes of it, not by the strings: real pages write
+        # one place many ways ("US, CA, Santa Clara"), and the field only feeds that rule.
+        # Both sides get gold's track, so a track miss isn't counted against location too.
+        as_read = gold | {"locations": predicted["locations"], "remote": predicted["remote"]}
+        return gold["remote"] == predicted["remote"] and location(gold, profile) == location(as_read, profile)
+    return all(gold[c] == predicted[c] for c in FIELD_COLUMNS[field])
 
 
-def same_value(column, gold, predicted):
-    if column == "locations":  # order and case of a list of places don't matter
-        return places(gold) == places(predicted)
-    return gold == predicted
-
-
-def field_accuracy(gold_rows, predicted_rows):
+def field_accuracy(gold_rows, predicted_rows, profile):
     """{field: (right, total)}. A predicted row of None (no usable extraction) is wrong on every field."""
     if len(gold_rows) != len(predicted_rows):
         raise ValueError("gold and predicted rows must be the same length")
     right = Counter()
     for gold, predicted in zip(gold_rows, predicted_rows):
-        for field, columns in FIELD_COLUMNS.items():
-            right[field] += predicted is not None and all(same_value(c, gold[c], predicted[c]) for c in columns)
+        for field in FIELD_COLUMNS:
+            right[field] += predicted is not None and same_field(field, gold, predicted, profile)
     return {field: (right[field], len(gold_rows)) for field in FIELD_COLUMNS}
 
 
