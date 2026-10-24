@@ -3,6 +3,7 @@
 import argparse
 import contextlib
 import csv
+import os
 import time
 from collections import Counter
 from pathlib import Path
@@ -24,8 +25,12 @@ from posting_triage.profile import (
     parse_profile,
     parse_strings,
 )
+from posting_triage.run_eval import EFFORT, MODELS, load_env
+from posting_triage.triage import DEAD, triage
 
 EXAMPLE_PROFILE = Path(__file__).parent.parent / "profile.example.yaml"
+# The eval's pick (Oct 24 full run): the cheapest model within 5 points of the best apply precision.
+DEFAULT_MODEL = "claude-haiku-5-5"
 
 
 def main(argv=None):
@@ -44,7 +49,10 @@ def main(argv=None):
     label.add_argument("--labels", default="data/labels.csv")
     label.add_argument("--skips", default="data/label_skips.csv")
     label.add_argument("--cache-dir", default=str(CACHE_DIR))
-    sub.add_parser("run", help="triage postings (not implemented yet)")
+    run = sub.add_parser("run", help="triage posting URLs: APPLY, FLAG, SKIP, or DEAD, with the reason")
+    run.add_argument("urls", nargs="+", metavar="URL")
+    run.add_argument("--profile", default="profile.yaml")
+    run.add_argument("--model", default=DEFAULT_MODEL, choices=MODELS)
     args = parser.parse_args(argv)
 
     if args.command == "init":
@@ -56,8 +64,7 @@ def main(argv=None):
             candidates = list(csv.DictReader(f))
         return run_session(candidates, Terminal(), args.labels, args.skips, args.cache_dir)
     if args.command == "run":
-        print("triage run: not implemented yet")
-        return 0
+        return run_triage(args)
     return 1
 
 
@@ -142,23 +149,73 @@ def format_profile(data):
     return yaml.safe_dump(data, sort_keys=False, default_flow_style=None, width=1000)
 
 
+@contextlib.contextmanager
+def browser_when_needed(no_browser=False):
+    """Yields browser_for(url): None for board-API links, else one Chromium, started only
+    when the first such link needs it and shared by every later one."""
+    with contextlib.ExitStack() as stack:
+        browser = None
+
+        def browser_for(url):
+            nonlocal browser
+            if no_browser or board_job(url) is not None:
+                return None
+            if browser is None:
+                browser = stack.enter_context(Browser())
+            return browser
+
+        yield browser_for
+
+
+def run_triage(args):
+    try:
+        profile = load_profile(args.profile)
+    except ProfileError as e:
+        print(e)
+        return 1
+    load_env()
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("ANTHROPIC_API_KEY is not set: put it in .env (see .env.example)")
+        return 1
+    import anthropic  # imported here so the other commands don't need it
+
+    client = anthropic.Anthropic()
+    failed = False
+    with browser_when_needed() as browser_for:
+        for url in args.urls:
+            try:
+                result = triage(url, profile, client.messages.create, args.model, browser_for(url), effort=EFFORT)
+            except anthropic.APIError as e:  # one bad call shouldn't lose the other postings
+                print(f"ERROR  {url}\n       {type(e).__name__}: {e}")
+                failed = True
+                continue
+            print(format_triage(result))
+    return 1 if failed else 0
+
+
+def format_triage(result):
+    """The verdict and URL, then the reason on an indented line (none for APPLY)."""
+    if result.verdict == DEAD:
+        reason = f"careers page: {result.careers_page}" if result.careers_page else result.detail
+    elif result.field == "liveness":
+        reason = f"couldn't verify ({result.detail})"
+    elif result.field == "quote":
+        reason = f'quote not in the posting: "{result.quote}"' if result.quote else "no usable reading of the posting"
+    elif result.field:
+        reason = f'{result.field}: "{result.quote}"' if result.quote else result.field
+    else:
+        reason = ""
+    return f"{result.verdict.upper():5}  {result.url}" + (f"\n       {reason}" if reason else "")
+
+
 def run_cache(args):
     with open(args.candidates, newline="") as f:
         rows = list(csv.DictReader(f))
 
-    with contextlib.ExitStack() as stack:
-        browser = None
-
-        def fetch(url):
-            nonlocal browser
-            # Start Chromium only when the first non-API link actually needs it.
-            if browser is None and not args.no_browser and board_job(url) is None:
-                browser = stack.enter_context(Browser())
-            return fetch_posting(url, browser)
-
+    with browser_when_needed(args.no_browser) as browser_for:
         counts = cache_all(
             rows,
-            fetch,
+            lambda url: fetch_posting(url, browser_for(url)),
             cache_dir=args.cache_dir,
             refresh=args.refresh,
             sleep=(lambda: time.sleep(args.delay)) if args.delay > 0 else None,
