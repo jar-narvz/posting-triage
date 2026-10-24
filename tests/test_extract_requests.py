@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from posting_triage.extract import (
-    SYSTEM, ExtractionError, extract, json_schema, parse, pipeline_verdict, request_params,
+    FIELD_GUIDE, SYSTEM, ExtractionError, extract, json_schema, parse, pipeline_verdict, request_params,
 )
 from posting_triage.profile import load_profile
 from posting_triage.synthetic import generate
@@ -37,6 +37,12 @@ class FakeClient:
 
 def good():
     return perfect(POSTING).model_dump()
+
+
+def test_an_or_of_higher_degrees_records_the_lower():
+    # The phrase library's "BS required; MS or PhD preferred" is masters, preferred; without
+    # this line, "the highest degree the posting asks for" reads as phd.
+    assert '"BS required, MS or PhD preferred": masters, preferred' in FIELD_GUIDE
 
 
 def with_bad_quote():

@@ -181,6 +181,7 @@ degree: the highest degree the posting asks for, and whether it is required or o
 - "BS/MS", "Bachelor's or Master's", or "currently pursuing a Bachelor's, Master's, or PhD": bachelors, required (a lower degree is enough).
 - "BS required, MS preferred": masters, preferred.
 - "MS or PhD required": masters, required.
+- "BS required, MS or PhD preferred": masters, preferred (with "or", either degree will do, so give the lower).
 - "or equivalent practical experience": none.
 - Nothing about degrees: null.
 - "Graduate" in a title such as "Software Engineer Graduate" names a new-grad program, not a degree. A title ending "- PhD" is a degree requirement.

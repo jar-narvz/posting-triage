@@ -137,6 +137,7 @@ Degree `m` masters, `p` preferred. That's above bachelors but only preferred →
 | "BS/MS in CS" or "Bachelor's or Master's" | bachelors | required |
 | "BS required, MS preferred" | masters | preferred |
 | "MS or PhD required" | masters | required |
+| "BS required, MS or PhD preferred" | masters | preferred |
 | "currently pursuing a Bachelor's, Master's, or PhD" | bachelors | required |
 | "or equivalent practical experience" | none needed (`n`) | — |
 | nothing about degrees | `-` | — |
