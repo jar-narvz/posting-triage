@@ -13,6 +13,7 @@ MODULES = [
     "posting_triage.profile",
     "posting_triage.label",
     "posting_triage.urlguard",
+    "posting_triage.proxy",
 ]
 
 

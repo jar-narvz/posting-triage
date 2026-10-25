@@ -3,8 +3,8 @@ or link-local addresses such as the cloud metadata address 169.254.169.254.
 
 The check resolves the hostname and tests every address it returns: names like
 "localtest.me" or "2130706433" look harmless as text but reach 127.0.0.1.
-The browser runs the same address check on every request it makes (liveness.Browser),
-so a redirect or a subresource can't reach what the starting URL couldn't.
+The browser's traffic all goes through proxy.py, which runs the same address check on
+every connection, so a redirect or a subresource can't reach what the starting URL couldn't.
 """
 
 import ipaddress
@@ -45,7 +45,9 @@ def public_url(url, resolve=socket.getaddrinfo):
 
 
 def public_host(host, port, resolve=socket.getaddrinfo):
-    """Raise BlockedURL unless every address `host` resolves to is public."""
+    """The addresses `host` resolves to, sorted; raise BlockedURL unless every one is public.
+    A caller that connects should use these addresses, not resolve the name again: a second
+    lookup could answer differently (DNS rebinding)."""
     last_label = host.rstrip(".").rsplit(".", 1)[-1]
     if ":" not in host and NUMERIC_LABEL.fullmatch(last_label) and not is_dotted_quad(host):
         # Only plain dotted quads, so the browser and the resolver agree on the address.
@@ -54,9 +56,11 @@ def public_host(host, port, resolve=socket.getaddrinfo):
         infos = resolve(host, port, proto=socket.IPPROTO_TCP)
     except (socket.gaierror, UnicodeError):
         raise BlockedURL(f"{host} doesn't resolve") from None
-    for address in sorted({info[4][0] for info in infos}):
+    addresses = sorted({info[4][0] for info in infos})
+    for address in addresses:
         if not public_address(address):
             raise BlockedURL(f"{host} resolves to a non-public address ({address})")
+    return addresses
 
 
 def public_address(text):

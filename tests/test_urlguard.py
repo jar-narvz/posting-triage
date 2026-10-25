@@ -6,7 +6,7 @@ import socket
 
 import pytest
 
-from posting_triage.urlguard import BlockedURL, public_address, public_url
+from posting_triage.urlguard import BlockedURL, public_address, public_host, public_url
 
 PUBLIC = "93.184.215.14"
 
@@ -80,6 +80,12 @@ def test_unusual_ip_forms_are_blocked_before_resolving(host):
     # 0177.0.0.1 is the trap: macOS's resolver reads 177.0.0.1 (public), Chromium reads octal 127.0.0.1.
     with pytest.raises(BlockedURL, match="unusual form"):
         public_url(f"http://{host}/", resolver({}))
+
+
+def test_public_host_returns_the_addresses_it_checked():
+    # The proxy connects to these, so a second DNS answer can't swap in a private address.
+    assert public_host("multi.example", 443, resolver({"multi.example": ["2606:4700::1111", PUBLIC]})) == [
+        "2606:4700::1111", PUBLIC]
 
 
 def test_a_public_dotted_quad_passes():
