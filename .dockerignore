@@ -1,0 +1,7 @@
+# Only what the image needs. Everything else stays out by default, so .env, profile.yaml,
+# data/ (cached postings, eval runs) and local notes can't end up in the image.
+*
+!pyproject.toml
+!README.md
+!posting_triage/
+**/__pycache__
