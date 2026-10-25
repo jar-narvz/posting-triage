@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import csv
 import os
+import sys
 import time
 from collections import Counter
 from pathlib import Path
@@ -26,7 +27,7 @@ from posting_triage.profile import (
     parse_strings,
 )
 from posting_triage.run_eval import EFFORT, MODELS, load_env
-from posting_triage.triage import DEAD, triage
+from posting_triage.triage import DEAD, TriageResponse, triage
 
 EXAMPLE_PROFILE = Path(__file__).parent.parent / "profile.example.yaml"
 # The eval's pick (Oct 24 full run): the cheapest model within 5 points of the best apply precision.
@@ -53,6 +54,7 @@ def main(argv=None):
     run.add_argument("urls", nargs="+", metavar="URL")
     run.add_argument("--profile", default="profile.yaml")
     run.add_argument("--model", default=DEFAULT_MODEL, choices=MODELS)
+    run.add_argument("--json", action="store_true", help="one JSON object per URL, the API's response schema")
     args = parser.parse_args(argv)
 
     if args.command == "init":
@@ -183,13 +185,19 @@ def run_triage(args):
     failed = False
     with browser_when_needed() as browser_for:
         for url in args.urls:
+            start = time.perf_counter()
             try:
                 result = triage(url, profile, client.messages.create, args.model, browser_for(url), effort=EFFORT)
             except anthropic.APIError as e:  # one bad call shouldn't lose the other postings
-                print(f"ERROR  {url}\n       {type(e).__name__}: {e}")
+                # With --json, errors go to stderr so stdout stays one valid JSON object per line.
+                print(f"ERROR  {url}\n       {type(e).__name__}: {e}", file=sys.stderr if args.json else sys.stdout)
                 failed = True
                 continue
-            print(format_triage(result))
+            if args.json:
+                latency_ms = round((time.perf_counter() - start) * 1000)
+                print(TriageResponse.from_triage(result, args.model, latency_ms).model_dump_json())
+            else:
+                print(format_triage(result))
     return 1 if failed else 0
 
 

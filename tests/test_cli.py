@@ -1,10 +1,11 @@
+import json
 from pathlib import Path
 
 import anthropic
 import pytest
 
 from posting_triage.cli import DEFAULT_MODEL, format_triage, main
-from posting_triage.triage import Triage
+from posting_triage.triage import Triage, TriageResponse
 
 EXAMPLE_PROFILE = str(Path(__file__).parent.parent / "profile.example.yaml")
 BOARD_URL = "https://job-boards.greenhouse.io/acme/jobs/1"
@@ -87,6 +88,28 @@ def test_an_api_error_on_one_posting_still_triages_the_rest(run_env, monkeypatch
     out = capsys.readouterr().out
     assert f"ERROR  {BOARD_URL}\n       FakeAPIError: connection reset" in out
     assert f'SKIP   {WORKDAY_URL}\n       degree: "PhD required"' in out
+
+
+def test_run_json_prints_one_response_per_url(run_env, capsys):
+    assert main(["run", BOARD_URL, WORKDAY_URL, "--profile", EXAMPLE_PROFILE, "--json"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    responses = [TriageResponse.model_validate(json.loads(line)) for line in lines]
+    assert [(r.url, r.verdict, r.model) for r in responses] == [
+        (BOARD_URL, "apply", DEFAULT_MODEL), (WORKDAY_URL, "apply", DEFAULT_MODEL)]
+    assert all(r.latency_ms >= 0 for r in responses)
+
+
+def test_run_json_sends_errors_to_stderr(run_env, monkeypatch, capsys):
+    def flaky(url, profile, call, model, browser, effort):
+        if url == BOARD_URL:
+            raise FakeAPIError("connection reset")
+        return Triage(url, "skip", "degree", "PhD required")
+
+    monkeypatch.setattr("posting_triage.cli.triage", flaky)
+    assert main(["run", BOARD_URL, WORKDAY_URL, "--profile", EXAMPLE_PROFILE, "--json"]) == 1
+    captured = capsys.readouterr()
+    assert f"ERROR  {BOARD_URL}" in captured.err
+    assert [json.loads(line)["url"] for line in captured.out.splitlines()] == [WORKDAY_URL]
 
 
 def test_cache_command_fetches_every_candidate(tmp_path, monkeypatch, capsys):

@@ -3,10 +3,13 @@ Fake `get`, browser, and `call` stand in for the board APIs, Chromium, and Claud
 
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from posting_triage.liveness import PostingText
 from posting_triage.profile import load_profile
 from posting_triage.synthetic import generate
-from posting_triage.triage import DEAD, Triage, triage
+from posting_triage.triage import DEAD, Triage, TriageResponse, triage
 from test_extract import perfect
 from test_extract_requests import FakeClient, reply
 from test_liveness import fake_get
@@ -79,3 +82,28 @@ def test_board_text_is_what_the_llm_reads():
     triage(GH_POSTING, PROFILE, call, "m", browser=browser, get=get)
     assert browser.urls == []
     assert posting["text"].splitlines()[0] in call.requests[0]["messages"][0]["content"]
+
+
+@pytest.mark.parametrize("result", [
+    Triage("u", "apply", "", None),
+    Triage("u", "skip", "degree", "PhD required"),
+    Triage("u", "flag", "liveness", None, detail="HTTP 403"),
+    Triage("u", DEAD, "liveness", None, "https://acme.example/", "HTTP 404"),
+])
+def test_response_carries_every_triage_field_plus_the_run(result):
+    response = TriageResponse.from_triage(result, "claude-haiku-5-5", 812)
+    assert response.model_dump() == {
+        "url": result.url,
+        "verdict": result.verdict,
+        "deciding_field": result.field,
+        "quote": result.quote,
+        "careers_page": result.careers_page,
+        "detail": result.detail,
+        "model": "claude-haiku-5-5",
+        "latency_ms": 812,
+    }
+
+
+def test_response_refuses_a_verdict_outside_the_four():
+    with pytest.raises(ValidationError):
+        TriageResponse.from_triage(Triage("u", "maybe", "", None), "m", 0)

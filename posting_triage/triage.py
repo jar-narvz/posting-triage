@@ -5,6 +5,9 @@ every decision lives in liveness.py (is it live?) and rules.py (APPLY / FLAG / S
 """
 
 from dataclasses import dataclass
+from typing import Literal
+
+from pydantic import BaseModel
 
 from posting_triage.extract import pipeline_verdict
 from posting_triage.liveness import fetch_posting, get_json, live_careers_page
@@ -21,6 +24,33 @@ class Triage:
     quote: str | None  # the posting's words behind it, when there are any
     careers_page: str | None = None  # only for DEAD: where to look for other roles; None if that's gone too
     detail: str = ""  # why liveness failed, e.g. "HTTP 403"
+
+
+class TriageResponse(BaseModel):
+    """The one answer schema `triage run --json` and the API both return (decision 7).
+    `Triage` stays the internal result; this adds what a caller needs to know about the run."""
+
+    url: str
+    verdict: Literal["apply", "flag", "skip", "dead"]
+    deciding_field: str  # "" for APPLY
+    quote: str | None
+    careers_page: str | None
+    detail: str
+    model: str
+    latency_ms: int
+
+    @classmethod
+    def from_triage(cls, result, model, latency_ms):
+        return cls(
+            url=result.url,
+            verdict=result.verdict,
+            deciding_field=result.field,
+            quote=result.quote,
+            careers_page=result.careers_page,
+            detail=result.detail,
+            model=model,
+            latency_ms=latency_ms,
+        )
 
 
 def triage(url, profile, call, model, browser=None, get=get_json, effort="medium"):
