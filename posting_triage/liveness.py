@@ -223,6 +223,17 @@ def join_lines(*parts):
     return "\n".join(p.strip() for p in parts if p and p.strip())
 
 
+CHROMIUM_ARGS = [
+    # QUIC and WebRTC's direct UDP could otherwise leave the browser without passing the proxy.
+    "--disable-quic",
+    "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+    # No JIT compiler for JavaScript: Chromium's sandbox can't run in the container, and the
+    # JIT is a common target for browser exploits. Tested on 6 real postings (Workday and
+    # company sites): the same text, and load times within run-to-run noise.
+    "--js-flags=--jitless",
+]
+
+
 class Browser:
     """Headless Chromium for pages the board APIs can't reach (Workday, company sites, ...).
 
@@ -249,8 +260,7 @@ class Browser:
             headless=True,
             # Playwright also sends loopback through the proxy (Chromium skips it by default).
             proxy={"server": self.proxy.url},
-            # Both of these could otherwise leave the browser without passing the proxy.
-            args=["--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
+            args=CHROMIUM_ARGS,
         )
         return self
 

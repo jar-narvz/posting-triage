@@ -1,6 +1,7 @@
 import pytest
 
 from posting_triage.liveness import (
+    CHROMIUM_ARGS,
     BoardJob,
     Browser,
     PostingText,
@@ -387,3 +388,20 @@ def test_the_redirect_is_followed_when_its_target_is_allowed(internal_and_hostil
     hostile, internal, _ = internal_and_hostile
     with Browser(settle_ms=1_000, check=allow_only(hostile, internal)) as browser:
         assert "SECRET" in browser.fetch(f"{hostile}/redirect").text
+
+
+def test_chromium_runs_without_a_jit_and_without_udp():
+    # The sandbox can't run in the container, so the JIT (a common exploit target) is off;
+    # QUIC and WebRTC UDP would bypass the filtering proxy.
+    assert "--js-flags=--jitless" in CHROMIUM_ARGS
+    assert "--disable-quic" in CHROMIUM_ARGS
+    assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in CHROMIUM_ARGS
+
+
+@pytest.mark.browser
+def test_the_launched_browser_has_no_jit():
+    # V8 reports its flags to the page: with --jitless, WebAssembly (which needs the JIT) is gone.
+    with Browser() as browser:
+        page = browser._browser.new_page()
+        assert page.evaluate("typeof WebAssembly") == "undefined"
+        page.close()
