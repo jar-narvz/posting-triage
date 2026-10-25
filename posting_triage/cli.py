@@ -1,4 +1,4 @@
-"""Command-line entry point: `triage init | label | cache | run`."""
+"""Command-line entry point: `triage init | label | cache | run | serve`."""
 
 import argparse
 import contextlib
@@ -53,6 +53,9 @@ def main(argv=None):
     run.add_argument("--profile", default="profile.yaml")
     run.add_argument("--model", default=DEFAULT_MODEL, choices=MODELS)
     run.add_argument("--json", action="store_true", help="one JSON object per URL, the API's response schema")
+    serve = sub.add_parser("serve", help="start the REST API (settings from .env; see .env.example)")
+    serve.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to listen beyond this machine, e.g. in Docker")
+    serve.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
 
     if args.command == "init":
@@ -65,6 +68,8 @@ def main(argv=None):
         return run_session(candidates, Terminal(), args.labels, args.skips, args.cache_dir)
     if args.command == "run":
         return run_triage(args)
+    if args.command == "serve":
+        return run_serve(args)
     return 1
 
 
@@ -197,6 +202,23 @@ def run_triage(args):
             else:
                 print(format_triage(result))
     return 1 if failed else 0
+
+
+def run_serve(args):
+    """Start uvicorn with one worker process: the rate limiter and the 2-at-a-time cap live
+    in memory, so more workers would each keep their own."""
+    load_env()
+    from posting_triage.api import create_app, settings_from_env  # only serve needs FastAPI
+
+    try:
+        app = create_app(settings_from_env())
+    except (RuntimeError, ProfileError) as e:  # fail closed, with the reason instead of a traceback
+        print(f"Not starting the API: {e}")
+        return 1
+    import uvicorn
+
+    uvicorn.run(app, host=args.host, port=args.port)
+    return 0
 
 
 def format_triage(result):

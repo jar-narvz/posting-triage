@@ -112,6 +112,62 @@ def test_run_json_sends_errors_to_stderr(run_env, monkeypatch, capsys):
     assert [json.loads(line)["url"] for line in captured.out.splitlines()] == [WORKDAY_URL]
 
 
+@pytest.fixture
+def serve_env(monkeypatch):
+    """API settings in the environment, no .env read, and uvicorn.run recorded instead of run."""
+    import uvicorn
+
+    monkeypatch.setattr("posting_triage.cli.load_env", lambda: None)
+    for name, value in {"TRIAGE_API_TOKEN": "t", "ANTHROPIC_API_KEY": "test-key",
+                        "TRIAGE_PROFILE": EXAMPLE_PROFILE}.items():
+        monkeypatch.setenv(name, value)
+    started = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, host, port: started.append((app, host, port)))
+    return started
+
+
+def test_serve_starts_the_api_on_localhost_by_default(serve_env):
+    from fastapi import FastAPI
+
+    assert main(["serve"]) == 0
+    [(app, host, port)] = serve_env
+    assert isinstance(app, FastAPI) and (host, port) == ("127.0.0.1", 8000)
+
+
+def test_serve_takes_a_host_and_port(serve_env):
+    assert main(["serve", "--host", "0.0.0.0", "--port", "8080"]) == 0
+    assert serve_env[0][1:] == ("0.0.0.0", 8080)
+
+
+@pytest.mark.parametrize("unset, set_to, reason", [
+    ("TRIAGE_API_TOKEN", None, "TRIAGE_API_TOKEN"),
+    ("TRIAGE_PROFILE", "/nowhere/profile.yaml", "not found"),
+])
+def test_serve_refuses_to_start_and_says_why(serve_env, monkeypatch, capsys, unset, set_to, reason):
+    if set_to:
+        monkeypatch.setenv(unset, set_to)
+    else:
+        monkeypatch.delenv(unset)
+    assert main(["serve"]) == 1
+    out = capsys.readouterr().out
+    assert out.startswith("Not starting the API:") and reason in out
+    assert serve_env == []
+
+
+def test_env_example_holds_working_api_defaults(monkeypatch):
+    from posting_triage.api import Settings, settings_from_env
+    from posting_triage.run_eval import load_env
+
+    for name in ("ANTHROPIC_API_KEY", "TRIAGE_API_TOKEN", "TRIAGE_RATE_LIMIT", "TRIAGE_TIMEOUT_S", "TRIAGE_PROFILE"):
+        monkeypatch.delenv(name, raising=False)
+    load_env(Path(__file__).parent.parent / ".env.example")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    with pytest.raises(RuntimeError, match="TRIAGE_API_TOKEN"):  # shipped empty, so it fails closed
+        settings_from_env()
+    monkeypatch.setenv("TRIAGE_API_TOKEN", "t")
+    assert settings_from_env() == Settings("t", 10, 90.0, "profile.yaml")
+
+
 def test_cache_command_fetches_every_candidate(tmp_path, monkeypatch, capsys):
     from posting_triage.liveness import PostingText
 
