@@ -12,6 +12,7 @@ MODULES = [
     "posting_triage.direct",
     "posting_triage.profile",
     "posting_triage.label",
+    "posting_triage.urlguard",
 ]
 
 
