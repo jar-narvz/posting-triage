@@ -12,6 +12,7 @@ from posting_triage.liveness import (
     live_careers_page,
     tidy_text,
 )
+from posting_triage.urlguard import BlockedURL
 
 UUID = "3d182b7f-482e-45b2-8668-f04f0b5fda8e"
 
@@ -276,27 +277,22 @@ def test_fetch_posting_without_a_browser_is_unreadable():
     assert result.status == "unreadable"
 
 
-@pytest.fixture
-def local_site():
-    """A tiny local web server: /job renders its text with JavaScript, /gone is a 404."""
+def serve(pages):
+    """A tiny local web server on 127.0.0.1: path -> (status, headers, body).
+    Returns (base URL, list of paths it was asked for, server)."""
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-    pages = {
-        "/job": (200, "<body><div id=app></div><script>"
-                      "document.getElementById('app').innerHTML = '<h1>SWE I</h1><p>BS   required</p>';"
-                      "</script></body>"),
-        "/gone": (404, "<body>Not found</body>"),
-        # iCIMS-style: the posting lives inside an iframe.
-        "/framed": (200, "<body><nav>Careers</nav><iframe src='/inner'></iframe></body>"),
-        "/inner": (200, "<body><p>Junior Engineer</p><p>2+ years required</p></body>"),
-    }
+    asked = []
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            status, body = pages.get(self.path, (500, "error"))
+            asked.append(self.path)
+            status, headers, body = pages.get(self.path, (500, {}, "error"))
             self.send_response(status)
             self.send_header("Content-Type", "text/html")
+            for name, value in headers.items():
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(body.encode())
 
@@ -304,14 +300,56 @@ def local_site():
             pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    yield f"http://127.0.0.1:{server.server_port}"
+    threading.Thread(target=server.serve_forever, args=(0.05,), daemon=True).start()
+    return f"http://127.0.0.1:{server.server_port}", asked, server
+
+
+def allow_only(*bases):
+    """A proxy check that allows only these local servers, the way the real one allows only
+    public addresses. Anything else, other local ports included, is blocked."""
+    ports = {int(base.rsplit(":", 1)[1]) for base in bases}
+
+    def check(host, port):
+        if host != "127.0.0.1" or port not in ports:
+            raise BlockedURL("not allowed in this test")
+        return ["127.0.0.1"]
+    return check
+
+
+@pytest.fixture
+def local_site():
+    """/job renders its text with JavaScript, /gone is a 404."""
+    base, _, server = serve({
+        "/job": (200, {}, "<body><div id=app></div><script>"
+                          "document.getElementById('app').innerHTML = '<h1>SWE I</h1><p>BS   required</p>';"
+                          "</script></body>"),
+        "/gone": (404, {}, "<body>Not found</body>"),
+        # iCIMS-style: the posting lives inside an iframe.
+        "/framed": (200, {}, "<body><nav>Careers</nav><iframe src='/inner'></iframe></body>"),
+        "/inner": (200, {}, "<body><p>Junior Engineer</p><p>2+ years required</p></body>"),
+    })
+    yield base
     server.shutdown()
+
+
+@pytest.fixture
+def internal_and_hostile():
+    """`internal` stands in for 169.254.170.2; `hostile` is a public page that tries to reach
+    it by a redirect, an iframe, an image, and a script's fetch()."""
+    internal, internal_asked, internal_server = serve({"/": (200, {}, "<body>SECRET CREDENTIALS</body>")})
+    hostile, _, hostile_server = serve({
+        "/redirect": (302, {"Location": f"{internal}/"}, ""),
+        "/embed": (200, {}, f"<body><p>Posting</p><iframe src='{internal}/'></iframe>"
+                            f"<img src='{internal}/'><script>fetch('{internal}/').catch(() => {{}})</script></body>"),
+    })
+    yield hostile, internal, internal_asked
+    hostile_server.shutdown()
+    internal_server.shutdown()
 
 
 @pytest.mark.browser
 def test_browser_reads_javascript_rendered_text(local_site):
-    with Browser(settle_ms=2_000) as browser:
+    with Browser(settle_ms=2_000, check=allow_only(local_site)) as browser:
         assert browser.fetch(f"{local_site}/job") == PostingText("ok", "browser", "SWE I\nBS required")
         assert browser.fetch(f"{local_site}/gone").status == "not_found"
         assert browser.fetch(f"{local_site}/broken").status == "unreadable"
@@ -319,6 +357,33 @@ def test_browser_reads_javascript_rendered_text(local_site):
 
 @pytest.mark.browser
 def test_browser_reads_text_inside_iframes(local_site):
-    with Browser(settle_ms=2_000) as browser:
+    with Browser(settle_ms=2_000, check=allow_only(local_site)) as browser:
         result = browser.fetch(f"{local_site}/framed")
     assert result == PostingText("ok", "browser", "Careers\nJunior Engineer\n2+ years required")
+
+
+@pytest.mark.browser
+def test_a_redirect_to_a_blocked_address_is_never_followed(internal_and_hostile):
+    hostile, internal, internal_asked = internal_and_hostile
+    with Browser(settle_ms=1_000, check=allow_only(hostile)) as browser:
+        result = browser.fetch(f"{hostile}/redirect")
+    assert result.status == "unreadable" and "SECRET" not in result.text
+    assert internal_asked == []
+    assert [port for _, port, _ in browser.proxy.blocked] == [int(internal.rsplit(":", 1)[1])]
+
+
+@pytest.mark.browser
+def test_iframes_images_and_scripts_cannot_reach_a_blocked_address(internal_and_hostile):
+    hostile, _, internal_asked = internal_and_hostile
+    with Browser(settle_ms=1_000, check=allow_only(hostile)) as browser:
+        result = browser.fetch(f"{hostile}/embed")
+    assert result.status == "ok" and "Posting" in result.text and "SECRET" not in result.text
+    assert internal_asked == []
+
+
+@pytest.mark.browser
+def test_the_redirect_is_followed_when_its_target_is_allowed(internal_and_hostile):
+    # The control: without it, the blocking test could pass because redirects never ran at all.
+    hostile, internal, _ = internal_and_hostile
+    with Browser(settle_ms=1_000, check=allow_only(hostile, internal)) as browser:
+        assert "SECRET" in browser.fetch(f"{hostile}/redirect").text

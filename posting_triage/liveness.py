@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlsplit
 
+from posting_triage.proxy import FilteringProxy, public_destination
+
 
 @dataclass(frozen=True)
 class BoardJob:
@@ -225,26 +227,37 @@ class Browser:
     """Headless Chromium for pages the board APIs can't reach (Workday, company sites, ...).
 
     It only loads pages and reads their text: it never clicks, signs in, or submits anything.
+    Every connection it makes goes through a FilteringProxy, so pages can only reach public
+    addresses (decision 9); `check` is swappable so tests can allow a local server.
     Use as a context manager so one browser serves many postings:
 
         with Browser() as browser:
             result = browser.fetch(url)
     """
 
-    def __init__(self, timeout_ms=30_000, settle_ms=10_000):
+    def __init__(self, timeout_ms=30_000, settle_ms=10_000, check=public_destination):
         self.timeout_ms = timeout_ms
         self.settle_ms = settle_ms
+        self.check = check
 
     def __enter__(self):
         from playwright.sync_api import sync_playwright  # imported here so API-only runs don't need it
 
+        self.proxy = FilteringProxy(self.check, timeout=self.timeout_ms / 1000).__enter__()
         self._playwright = sync_playwright().start()
-        self._browser = self._playwright.chromium.launch(headless=True)
+        self._browser = self._playwright.chromium.launch(
+            headless=True,
+            # Playwright also sends loopback through the proxy (Chromium skips it by default).
+            proxy={"server": self.proxy.url},
+            # Both of these could otherwise leave the browser without passing the proxy.
+            args=["--disable-quic", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"],
+        )
         return self
 
     def __exit__(self, *exc):
         self._browser.close()
         self._playwright.stop()
+        self.proxy.__exit__(*exc)
 
     def fetch(self, url):
         from playwright.sync_api import Error as PlaywrightError
