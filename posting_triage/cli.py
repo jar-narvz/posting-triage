@@ -27,11 +27,9 @@ from posting_triage.profile import (
     parse_strings,
 )
 from posting_triage.run_eval import EFFORT, MODELS, load_env
-from posting_triage.triage import DEAD, TriageResponse, triage
+from posting_triage.triage import DEAD, DEFAULT_MODEL, TriageResponse, triage
 
 EXAMPLE_PROFILE = Path(__file__).parent.parent / "profile.example.yaml"
-# The eval's pick (Oct 24 full run): the cheapest model within 5 points of the best apply precision.
-DEFAULT_MODEL = "claude-haiku-5-5"
 
 
 def main(argv=None):

@@ -10,13 +10,15 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "anthropic",
+    "fastapi",
     "playwright",
     "pydantic",
     "pyyaml",
+    "uvicorn[standard]",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["httpx", "pytest"]  # httpx: FastAPI's TestClient
 
 [project.scripts]
 triage = "posting_triage.cli:main"

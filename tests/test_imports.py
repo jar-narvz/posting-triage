@@ -15,6 +15,7 @@ MODULES = [
     "posting_triage.urlguard",
     "posting_triage.proxy",
     "posting_triage.ratelimit",
+    "posting_triage.api",
 ]
 
 

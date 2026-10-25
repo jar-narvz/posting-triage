@@ -14,6 +14,8 @@ from posting_triage.liveness import fetch_posting, get_json, live_careers_page
 from posting_triage.rules import FLAG
 
 DEAD = "dead"
+# The eval's pick (Oct 24 full run): the cheapest model within 5 points of the best apply precision.
+DEFAULT_MODEL = "claude-haiku-5-5"
 
 
 @dataclass(frozen=True)
