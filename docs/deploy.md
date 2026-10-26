@@ -90,3 +90,21 @@ docker rmi mcr.microsoft.com/playwright/python:v1.64.0-noble
 ```
 
 The last line frees about 3.5 GB, but the next build downloads the base image again.
+
+## AWS
+
+Everything runs in **us-east-2** with the AWS CLI profile `triage`. The account ID is looked up when a command runs, so it never appears in a file:
+
+```bash
+ACCT=$(aws sts get-caller-identity --profile triage --region us-east-2 --query Account --output text)
+```
+
+### Budget alert (created first)
+
+A $5 monthly cost budget, `posting-triage-monthly`, with email alerts when actual spend passes 80% and when forecast spend passes 100%. Credits are excluded, so the budget tracks real usage instead of reading $0 while the credit pays. Budgets with email alerts are free. The Budgets API lives only in us-east-1.
+
+Teardown:
+
+```bash
+aws budgets delete-budget --account-id "$ACCT" --budget-name posting-triage-monthly --profile triage --region us-east-1
+```
