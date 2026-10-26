@@ -38,6 +38,8 @@ actually exists in the code; never assume a module or phase from the original pl
 ### Approved new dependencies
 fastapi, uvicorn[standard], httpx (for FastAPI's TestClient). Ask before adding anything else,
 including AWS SDKs (deploys use the AWS CLI inside GitHub Actions, not app code).
+Added Oct 25–26, 2026: the AWS Lambda Web Adapter v1.1.0 (in the image, pinned by digest), and
+boto3 (the `aws` extra), used only to read the API's settings from Parameter Store at startup.
 
 ### Proposed design decisions (confirm each with me before building on it)
 7. The API is a thin layer. Endpoints call the same functions the CLI calls; no verdict
@@ -49,9 +51,11 @@ including AWS SDKs (deploys use the AWS CLI inside GitHub Actions, not app code)
    ranges, or link-local addresses (e.g. the cloud metadata address 169.254.169.254).
    This prevents server-side request forgery through the liveness checker.
 10. One Docker image runs both the CLI and the API.
-11. AWS: one region, one service. The image lives in ECR; the Anthropic key and API token
-    live in Secrets Manager; logs go to CloudWatch. GitHub Actions deploys using an OIDC
-    role, so no long-lived AWS keys exist anywhere.
+11. AWS: one region (us-east-2), one service (Lambda behind a function URL). The image lives
+    in ECR; the Anthropic key, API token, and profile live in Parameter Store as SecureStrings,
+    read by the app with boto3 at startup; logs go to CloudWatch. GitHub Actions deploys using
+    an OIDC role, so no long-lived AWS keys exist anywhere. (Oct 26, 2026: Parameter Store
+    replaced Secrets Manager: free, same encryption; only built-in rotation is lost.)
 
 ### AWS safety rules
 - Never create a billable AWS resource without first showing me the exact commands and the

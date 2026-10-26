@@ -37,6 +37,8 @@ Any command given to `docker run` replaces the default one, and still runs under
 | `TRIAGE_TIMEOUT_S` | `90` | Seconds before `POST /triage` gives up with a 504 |
 | `TRIAGE_PROFILE` | `/app/profile.yaml` | Path to the applicant's profile inside the container |
 | `PORT` | `8080` | Port the API listens on inside the container |
+| `TRIAGE_DOCS` | `on` | `off` hides `/docs`, `/redoc`, and `/openapi.json`; any other value stops startup |
+| `TRIAGE_SSM_PREFIX` | (unset) | On AWS: read the token, the Anthropic key, and the profile from Parameter Store under this prefix instead of the three settings above |
 
 Secrets and the profile are supplied when the container runs, never built in. `.dockerignore` is an allowlist (`pyproject.toml`, `README.md`, `posting_triage/`), so `.env`, `profile.yaml`, and `data/` can't be copied into the image.
 
@@ -51,6 +53,8 @@ Secrets and the profile are supplied when the container runs, never built in. `.
   - only the token holder can make the API fetch anything
   - the deployed API should use its own Anthropic key with a monthly spend limit, so a stolen key has a capped cost
 - **One uvicorn worker.** The rate limit and the 2-at-a-time cap live in memory, so more workers would each keep their own.
+- **The Lambda Web Adapter** in `/opt/extensions/` (v1.1.0, pinned by the digest of its multi-arch index). On Lambda it turns each invocation into an HTTP request to the server; anywhere else it's unused. The smoke test checks it matches the image's architecture.
+- **boto3**, only to read the API's settings from Parameter Store on AWS.
 
 ## Measured (Oct 25, 2026, Docker Desktop on an arm64 Mac)
 
@@ -97,6 +101,36 @@ Everything runs in **us-east-2** with the AWS CLI profile `triage`. The account 
 
 ```bash
 ACCT=$(aws sts get-caller-identity --profile triage --region us-east-2 --query Account --output text)
+```
+
+### The deployed API (Phase 1: deployed by hand from a Mac)
+
+Decision 11, built step by step from Oct 26, 2026, each step shown and approved before it runs. GitHub Actions takes over deploys (OIDC) when the code is pushed (Phase 2). The creation commands are added below as each step runs.
+
+| Resource | Name | Monthly cost |
+|---|---|---|
+| 3 SecureString parameters | `/posting-triage/anthropic-api-key`, `/posting-triage/api-token`, `/posting-triage/profile` | free (standard tier, default AWS key) |
+| ECR repository (keeps the last 3 images) | `posting-triage` | about $0.10 per GB stored |
+| CloudWatch log group (14-day retention) | `/aws/lambda/posting-triage` | about $0 at this volume |
+| IAM role: logs + read `/posting-triage/*` | `posting-triage-lambda` | free |
+| Lambda function: arm64, 2048 MB, 120 s, reserved concurrency 2 | `posting-triage` | $0 when idle |
+| Function URL (auth `NONE`; the app checks the token) | on `posting-triage` | free |
+
+The function's own settings hold no secrets: `TRIAGE_SSM_PREFIX=/posting-triage`, `TRIAGE_DOCS=off`, `HOME=/tmp` (Lambda's filesystem is read-only except `/tmp`).
+
+The Anthropic key comes from its own Console workspace with a $5 monthly spend limit. It's typed straight into the parameter, never into a file or chat.
+
+Teardown, in this order (the function first, then what it uses), then revoke the key in the Anthropic Console:
+
+```bash
+aws lambda delete-function-url-config --function-name posting-triage --profile triage --region us-east-2
+aws lambda delete-function --function-name posting-triage --profile triage --region us-east-2
+aws logs delete-log-group --log-group-name /aws/lambda/posting-triage --profile triage --region us-east-2
+aws iam delete-role-policy --role-name posting-triage-lambda --policy-name read-parameters --profile triage --region us-east-2
+aws iam detach-role-policy --role-name posting-triage-lambda --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole --profile triage --region us-east-2
+aws iam delete-role --role-name posting-triage-lambda --profile triage --region us-east-2
+aws ecr delete-repository --repository-name posting-triage --force --profile triage --region us-east-2
+aws ssm delete-parameters --names /posting-triage/anthropic-api-key /posting-triage/api-token /posting-triage/profile --profile triage --region us-east-2
 ```
 
 ### Budget alert (created first)
