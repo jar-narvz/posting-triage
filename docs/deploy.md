@@ -103,9 +103,11 @@ Everything runs in **us-east-2** with the AWS CLI profile `triage`. The account 
 ACCT=$(aws sts get-caller-identity --profile triage --region us-east-2 --query Account --output text)
 ```
 
-### The deployed API (Phase 1: deployed by hand from a Mac)
+### The deployed API (deployed from a Mac)
 
-Decision 11, built step by step from Oct 26, 2026, each step shown and approved before it runs. GitHub Actions takes over deploys (OIDC) when the code is pushed (Phase 2). The creation commands are added below as each step runs.
+Decision 11, built step by step on Oct 26, 2026, each step shown and approved before it ran. The creation commands are below, in order.
+
+Deploys run from a Mac signed in with `aws login`, whose credentials are temporary, so no AWS key is stored anywhere. GitHub Actions can't deploy keylessly here: that needs an OIDC identity provider, and this account is an AWS Builder ID project, whose service control policy denies `iam:*Provider*` on both the Free and the Paid plan. Only "Activate advanced AWS features" lifts it, which can't be undone and removes spend limits. Storing a long-lived access key in GitHub instead would defeat the point.
 
 | Resource | Name | Monthly cost |
 |---|---|---|
@@ -215,6 +217,24 @@ Read the timings in CloudWatch: each request ends with a `REPORT` line (duration
 Found on the first deploy:
 - **The first start ran past Lambda's 10 s init limit** (`INIT_REPORT ... Status: timeout`). The adapter waits for `/health`, and the app (imports, boto3, the Parameter Store read) wasn't ready in time. Lambda then ran init again inside the first request, which worked; that cold start took about 16 s. Starting faster would avoid the wasted 10 s.
 - **tini can't reap zombies on Lambda** ("Tini is not running as PID 1"): Lambda's own init is process 1, and `TINI_SUBREAPER` stops the app from starting there. Chromium's leftover helper processes may build up in a long-lived warm copy; not yet measured.
+
+#### Deploying a new version
+
+Commit, then run:
+
+```bash
+scripts/deploy.sh
+```
+
+It refuses to run off `main` or with uncommitted changes, so the tag always names exactly what's deployed. Then it runs the unit tests, builds the arm64 image tagged with the commit, runs the smoke test, pushes the image to ECR, points the function at the image's digest, checks the function really runs that digest, and waits for `/health` to answer 200. If the tag is already in ECR (tags are immutable), it deploys that image without rebuilding. It stops at the first failure.
+
+To roll back, point the function at the previous digest (the script prints it):
+
+```bash
+aws lambda update-function-code --function-name posting-triage --image-uri "${REG}/posting-triage@<previous digest>" --profile triage --region us-east-2
+```
+
+ECR keeps the 3 newest images, so the last two versions stay available to roll back to.
 
 Teardown, in this order (the function first, then what it uses), then revoke the key in the Anthropic Console:
 
