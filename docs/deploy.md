@@ -189,6 +189,33 @@ The URL isn't written down anywhere; look it up with:
 aws lambda get-function-url-config --function-name posting-triage --query FunctionUrl --output text --profile triage --region us-east-2
 ```
 
+7. Tests. The token is read into a variable and given to curl on stdin (`-H @-`), so it never shows on screen, in a file, or in the process list:
+
+```bash
+URL=$(aws lambda get-function-url-config --function-name posting-triage --query FunctionUrl --output text --profile triage --region us-east-2)
+TOKEN=$(aws ssm get-parameter --name /posting-triage/api-token --with-decryption --query Parameter.Value --output text --profile triage --region us-east-2)
+print -r -- "Authorization: Bearer $TOKEN" | curl -s -X POST "${URL%/}/triage" -H @- -H 'Content-Type: application/json' -d '{"url":"<a posting URL from data/cache>"}'
+unset TOKEN
+```
+
+Results on Oct 26, 2026 (image `a2bdbb9`, default model):
+
+| Check | Result |
+|---|---|
+| `/health` | 200 |
+| `/triage` with no token, with a wrong token | 401, 401 |
+| `http://169.254.169.254/latest/meta-data/` | 400 |
+| `/docs`, `/openapi.json` | 404, 404 |
+| GM (Workday, read through its API) | 200 FLAG on graduation, 6.9 s, 185 MB |
+| TikTok (browser) | 200 APPLY, 28.6 s (Chromium's first start in that copy), 804 MB |
+| S&P Global (Workday answers 403, so the browser, which renders Workday empty on Lambda) | 200 FLAG "no posting text", 2.5 s |
+
+Read the timings in CloudWatch: each request ends with a `REPORT` line (duration, billed duration, peak memory).
+
+Found on the first deploy:
+- **The first start ran past Lambda's 10 s init limit** (`INIT_REPORT ... Status: timeout`). The adapter waits for `/health`, and the app (imports, boto3, the Parameter Store read) wasn't ready in time. Lambda then ran init again inside the first request, which worked; that cold start took about 16 s. Starting faster would avoid the wasted 10 s.
+- **tini can't reap zombies on Lambda** ("Tini is not running as PID 1"): Lambda's own init is process 1, and `TINI_SUBREAPER` stops the app from starting there. Chromium's leftover helper processes may build up in a long-lived warm copy; not yet measured.
+
 Teardown, in this order (the function first, then what it uses), then revoke the key in the Anthropic Console:
 
 ```bash
