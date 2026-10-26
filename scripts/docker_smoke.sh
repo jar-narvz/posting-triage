@@ -63,6 +63,7 @@ docker exec "$NAME" python -c '
 import subprocess
 from posting_triage.liveness import Browser
 with Browser() as b:
+    b._start()  # Chromium otherwise waits for the first fetch
     page = b._browser.new_page()
     page.set_content("<p>ok</p>")
     assert page.inner_text("p") == "ok"
