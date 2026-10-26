@@ -108,3 +108,26 @@ Teardown:
 ```bash
 aws budgets delete-budget --account-id "$ACCT" --budget-name posting-triage-monthly --profile triage --region us-east-1
 ```
+
+### Lambda prototype (Oct 26, 2026; torn down)
+
+A throwaway test of whether Chromium runs on Lambda, built and torn down the same day (about 52 minutes on AWS, a few cents). Function: arm64, 2048 MB, 120 s timeout, the image plus the Lambda Web Adapter v1.1.0 pinned by digest, a function URL, and reserved concurrency 2.
+
+What it showed:
+
+- **Chromium needs `--no-zygote` on Lambda.** Without it every tab crashed ("Target crashed"); Chromium's log showed the zygote's credential change was forbidden ("Operation not permitted"). The flag is now in `CHROMIUM_ARGS`. Don't set `TINI_SUBREAPER` there either: Lambda forbids that too, and the app won't start.
+- **Workday pages render empty on Lambda**, even though Workday sends the same files as anywhere else; other JavaScript sites (TikTok, Waymo, iCIMS) read fine. That's why Workday now goes through its API (decision 5), which answers from AWS.
+- **Measured:** `/health` about 22 s cold and 0.2 s warm; a triage that needs the browser about 60 s cold and 3–11 s warm, so warm it up before a demo. Peak memory 912 MB of 2048. No token or a wrong token → 401; the cloud metadata address → 400.
+- **On Lambda, an error's traceback is logged only when the next request arrives**, because Lambda freezes the environment once the response is sent. Send one more request before concluding there was no error. It uses a fake Anthropic key and a throwaway API token, so no real secrets reach AWS. The function runs as the role `posting-triage-proto`, which can only write its own logs. Run the teardown in this order: the function URL and the function first, then its log group, then the role (detach its policy first), then the image repository. In zsh, write `${ACCT}` before a colon, because zsh reads `$ACCT:r` as a modifier.
+
+Teardown:
+
+```bash
+aws lambda delete-function-url-config --function-name posting-triage-proto --profile triage --region us-east-2
+aws lambda delete-function --function-name posting-triage-proto --profile triage --region us-east-2
+aws logs delete-log-group --log-group-name /aws/lambda/posting-triage-proto --profile triage --region us-east-2
+aws iam detach-role-policy --role-name posting-triage-proto --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole --profile triage --region us-east-2
+aws iam delete-role --role-name posting-triage-proto --profile triage --region us-east-2
+aws ecr delete-repository --repository-name posting-triage-proto --force --profile triage --region us-east-2
+docker logout "$ACCT.dkr.ecr.us-east-2.amazonaws.com"
+```
