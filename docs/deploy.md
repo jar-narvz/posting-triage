@@ -174,6 +174,21 @@ aws lambda create-function --function-name posting-triage --package-type Image \
 aws lambda wait function-active-v2 --function-name posting-triage --profile triage --region us-east-2
 ```
 
+6. The 2-copy cap first, so the function is never reachable without it; then the public URL. Auth `NONE` means AWS doesn't check callers: the app does (the bearer token). A function URL needs both permissions, or every request gets a 403:
+
+```bash
+aws lambda put-function-concurrency --function-name posting-triage --reserved-concurrent-executions 2 --profile triage --region us-east-2
+aws lambda create-function-url-config --function-name posting-triage --auth-type NONE --profile triage --region us-east-2
+aws lambda add-permission --function-name posting-triage --statement-id FunctionURLAllowPublicAccess --action lambda:InvokeFunctionUrl --principal "*" --function-url-auth-type NONE --profile triage --region us-east-2
+aws lambda add-permission --function-name posting-triage --statement-id FunctionURLInvokeAllowPublicAccess --action lambda:InvokeFunction --principal "*" --invoked-via-function-url --profile triage --region us-east-2
+```
+
+The URL isn't written down anywhere; look it up with:
+
+```bash
+aws lambda get-function-url-config --function-name posting-triage --query FunctionUrl --output text --profile triage --region us-east-2
+```
+
 Teardown, in this order (the function first, then what it uses), then revoke the key in the Anthropic Console:
 
 ```bash
