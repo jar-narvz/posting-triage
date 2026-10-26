@@ -244,14 +244,29 @@ class Browser:
 
         with Browser() as browser:
             result = browser.fetch(url)
+
+    Chromium starts on the first fetch, not on entering, so a caller can hold a browser
+    "just in case" (a board API that may refuse) and pay nothing when it isn't used.
     """
 
     def __init__(self, timeout_ms=30_000, settle_ms=10_000, check=public_destination):
         self.timeout_ms = timeout_ms
         self.settle_ms = settle_ms
         self.check = check
+        self._browser = None
 
     def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        if self._browser is None:
+            return
+        self._browser.close()
+        self._playwright.stop()
+        self.proxy.__exit__(*exc)
+        self._browser = None
+
+    def _start(self):
         from playwright.sync_api import sync_playwright  # imported here so API-only runs don't need it
 
         self.proxy = FilteringProxy(self.check, timeout=self.timeout_ms / 1000).__enter__()
@@ -262,17 +277,13 @@ class Browser:
             proxy={"server": self.proxy.url},
             args=CHROMIUM_ARGS,
         )
-        return self
-
-    def __exit__(self, *exc):
-        self._browser.close()
-        self._playwright.stop()
-        self.proxy.__exit__(*exc)
 
     def fetch(self, url):
         from playwright.sync_api import Error as PlaywrightError
         from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
+        if self._browser is None:
+            self._start()
         page = self._browser.new_page()
         try:
             response = page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)

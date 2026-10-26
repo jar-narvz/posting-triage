@@ -402,6 +402,15 @@ def test_chromium_runs_without_a_jit_and_without_udp():
 def test_the_launched_browser_has_no_jit():
     # V8 reports its flags to the page: with --jitless, WebAssembly (which needs the JIT) is gone.
     with Browser() as browser:
+        browser._start()
         page = browser._browser.new_page()
         assert page.evaluate("typeof WebAssembly") == "undefined"
         page.close()
+
+
+def test_browser_starts_chromium_only_when_a_page_is_fetched(monkeypatch):
+    started = []
+    monkeypatch.setattr(Browser, "_start", lambda self: started.append(self))
+    with Browser():
+        pass
+    assert started == []  # entered and left without a fetch: nothing launched, nothing to close
