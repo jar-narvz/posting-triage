@@ -12,8 +12,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # behind when it closes; without an init they pile up as zombies (4 per browser, measured).
 # Installed before the code is copied, so code changes don't re-run apt-get.
 # It's what `docker run --init` uses, built in because App Runner can't pass --init.
+# The same step upgrades the base image's packages (security fixes) and removes the media
+# libraries (ffmpeg, gstreamer, fluidsynth, openexr) that Firefox and WebKit use for playback.
+# Chromium's headless shell, the only browser the app starts, links none of them, and they
+# held almost all of the image scan's critical and high findings. autoremove then drops the
+# packages that only they needed.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends tini \
+    && apt-get purge -y \
+        gstreamer1.0-libav gstreamer1.0-plugins-bad gstreamer1.0-plugins-base \
+        gstreamer1.0-plugins-good libgstreamer-plugins-bad1.0-0 \
+        libavcodec60 libavfilter9 libavformat60 libavutil58 libpostproc57 \
+        libswresample4 libswscale7 libx264-164 libx265-199 libopenh264-7 \
+        libfluidsynth3 libopenexr-3-1-30 \
+    && apt-get autoremove -y --purge \
     && rm -rf /var/lib/apt/lists/*
 
 # On AWS Lambda, the Lambda Web Adapter (a Lambda extension) turns each invocation into an
