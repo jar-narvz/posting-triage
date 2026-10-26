@@ -149,6 +149,17 @@ aws logs create-log-group --log-group-name /aws/lambda/posting-triage --profile 
 aws logs put-retention-policy --log-group-name /aws/lambda/posting-triage --retention-in-days 14 --profile triage --region us-east-2
 ```
 
+4. The function's role. Only Lambda can take it on; it can write logs (AWS's managed policy), call `ssm:GetParameters` on `/posting-triage/*` only (the one call `parameters.py` makes), and decrypt with the `aws/ssm` key only through Parameter Store:
+
+```bash
+KEYARN=$(aws kms describe-key --key-id alias/aws/ssm --profile triage --region us-east-2 --query KeyMetadata.Arn --output text)
+aws iam create-role --role-name posting-triage-lambda --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}' --profile triage --region us-east-2
+aws iam attach-role-policy --role-name posting-triage-lambda --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole --profile triage --region us-east-2
+aws iam put-role-policy --role-name posting-triage-lambda --policy-name read-parameters --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"ReadOwnParameters\",\"Effect\":\"Allow\",\"Action\":\"ssm:GetParameters\",\"Resource\":\"arn:aws:ssm:us-east-2:${ACCT}:parameter/posting-triage/*\"},{\"Sid\":\"DecryptThroughSsmOnly\",\"Effect\":\"Allow\",\"Action\":\"kms:Decrypt\",\"Resource\":\"${KEYARN}\",\"Condition\":{\"StringEquals\":{\"kms:ViaService\":\"ssm.us-east-2.amazonaws.com\"}}}]}" --profile triage --region us-east-2
+```
+
+To check the role, `aws iam simulate-principal-policy` needs `--context-entries "ContextKeyName=aws:RequestedRegion,ContextKeyValues=us-east-2,ContextKeyType=string"`: without a region, the account's region lock (an organization policy) denies everything in the simulation.
+
 Teardown, in this order (the function first, then what it uses), then revoke the key in the Anthropic Console:
 
 ```bash
