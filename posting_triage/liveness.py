@@ -281,6 +281,10 @@ CHROMIUM_ARGS = [
     # JIT is a common target for browser exploits. Tested on 6 real postings (Workday and
     # company sites): the same text, and load times within run-to-run noise.
     "--js-flags=--jitless",
+    # No zygote (the helper that forks every tab): it changes process credentials even with
+    # the sandbox off, which AWS Lambda forbids ("Operation not permitted"), so every tab
+    # crashed there. Without it Chromium starts each process directly; same text locally.
+    "--no-zygote",
 ]
 
 

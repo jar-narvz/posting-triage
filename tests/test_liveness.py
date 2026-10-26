@@ -493,6 +493,11 @@ def test_chromium_runs_without_a_jit_and_without_udp():
     assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in CHROMIUM_ARGS
 
 
+def test_chromium_runs_without_a_zygote():
+    # Lambda forbids the zygote's credential changes, which crashed every tab there.
+    assert "--no-zygote" in CHROMIUM_ARGS
+
+
 @pytest.mark.browser
 def test_the_launched_browser_has_no_jit():
     # V8 reports its flags to the page: with --jitless, WebAssembly (which needs the JIT) is gone.
