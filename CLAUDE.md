@@ -37,7 +37,7 @@ actually exists in the code; never assume a module or phase from the original pl
 
 ### Approved new dependencies
 fastapi, uvicorn[standard], httpx (for FastAPI's TestClient). Ask before adding anything else,
-including AWS SDKs (deploys use the AWS CLI inside GitHub Actions, not app code).
+including AWS SDKs (deploys use the AWS CLI from the Mac, not app code).
 Added Oct 25–26, 2026: the AWS Lambda Web Adapter v1.1.0 (in the image, pinned by digest), and
 boto3 (the `aws` extra), used only to read the API's settings from Parameter Store at startup.
 
@@ -53,9 +53,11 @@ boto3 (the `aws` extra), used only to read the API's settings from Parameter Sto
 10. One Docker image runs both the CLI and the API.
 11. AWS: one region (us-east-2), one service (Lambda behind a function URL). The image lives
     in ECR; the Anthropic key, API token, and profile live in Parameter Store as SecureStrings,
-    read by the app with boto3 at startup; logs go to CloudWatch. GitHub Actions deploys using
-    an OIDC role, so no long-lived AWS keys exist anywhere. (Oct 26, 2026: Parameter Store
-    replaced Secrets Manager: free, same encryption; only built-in rotation is lost.)
+    read by the app with boto3 at startup; logs go to CloudWatch. Deploys run from the Mac
+    (`scripts/deploy.sh`) with temporary `aws login` credentials, so no long-lived AWS keys
+    exist anywhere. (Oct 26, 2026: Parameter Store replaced Secrets Manager: free, same
+    encryption; only built-in rotation is lost. Same day: GitHub OIDC deploys dropped, because
+    the account is an AWS Builder ID project whose policy denies identity providers on both plans.)
 
 ### AWS safety rules
 - Never create a billable AWS resource without first showing me the exact commands and the
