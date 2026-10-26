@@ -35,7 +35,7 @@ digest_in_ecr() {
 
 DIGEST=$(digest_in_ecr)
 if [ -n "$DIGEST" ] && [ "$DIGEST" != None ]; then
-    # Tags are immutable, and a rebuild would give different bytes: reuse the tested image.
+    # Tags are immutable, and a rebuild may give different bytes: reuse the tested image.
     echo "ok   $TAG is already in ECR (tested when it was pushed), not rebuilding"
 else
     quietly "unit tests" .venv/bin/pytest -q
