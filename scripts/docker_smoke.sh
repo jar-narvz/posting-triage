@@ -76,6 +76,16 @@ echo "ok   Chromium launches, JIT off, no zombies"
 docker exec "$NAME" sh -c '[ "$(id -u)" != 0 ]' || fail "running as root"
 echo "ok   not running as root"
 
+# Lambda runs every executable in /opt/extensions; the adapter must be there and match the image.
+docker exec "$NAME" sh -c 'test -x /opt/extensions/lambda-adapter' || fail "Lambda adapter missing"
+docker exec "$NAME" python -c '
+import platform
+head = open("/opt/extensions/lambda-adapter", "rb").read(20)
+machine = {183: "aarch64", 62: "x86_64"}[int.from_bytes(head[18:20], "little")]  # ELF e_machine
+assert machine == platform.machine(), f"adapter is {machine}, image is {platform.machine()}"
+' || fail "Lambda adapter built for another architecture"
+echo "ok   Lambda adapter present, same architecture"
+
 # The same image runs the CLI (decision 10).
 docker run --rm "$IMAGE" triage run --help >/dev/null || fail "CLI mode"
 echo "ok   CLI mode runs"

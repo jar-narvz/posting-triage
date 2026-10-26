@@ -16,6 +16,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends tini \
     && rm -rf /var/lib/apt/lists/*
 
+# On AWS Lambda, the Lambda Web Adapter (a Lambda extension) turns each invocation into an
+# HTTP request to this server, so the same image runs there unchanged (decision 10).
+# Anywhere else the file just sits unused. v1.1.0, pinned by the digest of its multi-arch
+# index, so each architecture gets its own build of that exact release.
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0@sha256:17cfd08eff1dfea3f6a9a1e9c65fdac80aa4919b6085e746615530f43f57d2f1 \
+    /lambda-adapter /opt/extensions/lambda-adapter
+
 # Installed system-wide: this image's pip (in /usr/local) allows it, and the image runs one
 # app, so a venv would add nothing (and would need the python3-venv package, which isn't here).
 WORKDIR /app
@@ -29,8 +36,12 @@ RUN pip install --no-cache-dir ".[aws]"
 USER pwuser
 
 # The profile is mounted at run time, never built in: it holds personal data.
+# (On AWS it comes from Parameter Store instead; see TRIAGE_SSM_PREFIX.)
+# The adapter forwards to PORT and waits for /health before Lambda sends any request.
 ENV PORT=8080 \
-    TRIAGE_PROFILE=/app/profile.yaml
+    TRIAGE_PROFILE=/app/profile.yaml \
+    AWS_LWA_PORT=8080 \
+    AWS_LWA_READINESS_CHECK_PATH=/health
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
