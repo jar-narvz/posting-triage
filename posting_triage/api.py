@@ -45,6 +45,7 @@ class Settings:
     profile: str = "profile.yaml"  # a path, unless profile_yaml is set
     api_key: str | None = None  # None: the Anthropic SDK reads ANTHROPIC_API_KEY itself
     profile_yaml: str | None = None  # the profile itself, as kept in Parameter Store
+    docs: bool = True  # /docs, /redoc, /openapi.json; off on AWS, where only its owner calls it
 
 
 def settings_from_env(env=os.environ, read_parameters=read_parameters):
@@ -64,6 +65,9 @@ def settings_from_env(env=os.environ, read_parameters=read_parameters):
         raise RuntimeError("TRIAGE_API_TOKEN is not set: the API won't start without a token")
     if api_key == "":
         raise RuntimeError("the stored anthropic-api-key is empty")
+    docs = env.get("TRIAGE_DOCS", "on").strip().lower()
+    if docs not in ("on", "off"):
+        raise RuntimeError(f"TRIAGE_DOCS must be on or off, not {docs!r}")
     try:
         return Settings(
             token=token,
@@ -72,6 +76,7 @@ def settings_from_env(env=os.environ, read_parameters=read_parameters):
             profile=env.get("TRIAGE_PROFILE", "profile.yaml"),
             api_key=api_key,
             profile_yaml=profile_yaml,
+            docs=docs == "on",
         )
     except ValueError as e:
         raise RuntimeError(f"TRIAGE_RATE_LIMIT and TRIAGE_TIMEOUT_S must be numbers: {e}") from None
@@ -109,7 +114,9 @@ def create_app(settings=None, run=None, check_url=public_url, clock=time.monoton
     limiter = RateLimiter(settings.rate_limit, clock=clock)
     slots = asyncio.Semaphore(MAX_CONCURRENT)
     version = importlib.metadata.version("posting-triage")
-    app = FastAPI(title="Posting Triage", version=version)
+    # With docs off, the public URL answers only /health and /triage: nothing to explore.
+    docs = {} if settings.docs else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    app = FastAPI(title="Posting Triage", version=version, **docs)
 
     @app.get("/health")
     def health():

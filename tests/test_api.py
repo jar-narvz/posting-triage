@@ -55,6 +55,29 @@ def test_health_needs_no_token(client_for):
     assert response.json()["status"] == "ok" and response.json()["version"]
 
 
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_docs_are_served_unless_turned_off(client_for, path):
+    on, _ = client_for()
+    off, _ = client_for(docs=False)
+    assert on.get(path).status_code == 200
+    assert off.get(path).status_code == 404
+    assert off.get("/health").status_code == 200  # still up for warm-ups
+
+
+@pytest.mark.parametrize("value, expected", [(None, True), ("on", True), ("off", False), (" OFF ", False)])
+def test_triage_docs_setting(value, expected):
+    env = {"TRIAGE_API_TOKEN": "t", "ANTHROPIC_API_KEY": "k"}
+    if value is not None:
+        env["TRIAGE_DOCS"] = value
+    assert settings_from_env(env).docs is expected
+
+
+def test_an_unclear_docs_setting_stops_startup():
+    # A typo shouldn't quietly leave the docs public on AWS.
+    with pytest.raises(RuntimeError, match="TRIAGE_DOCS"):
+        settings_from_env({"TRIAGE_API_TOKEN": "t", "ANTHROPIC_API_KEY": "k", "TRIAGE_DOCS": "no"})
+
+
 def test_a_triage_returns_the_shared_schema_with_the_default_model(client_for):
     client, calls = client_for()
     response = client.post("/triage", json={"url": URL}, headers=AUTH)
