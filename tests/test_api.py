@@ -203,6 +203,50 @@ def test_settings_from_env_reads_every_setting():
     assert settings_from_env(env) == Settings("t", 5, 45.0, "/run/profile.yaml")
 
 
+def stored(**values):
+    """A read_parameters stand-in that returns these values for any prefix."""
+    base = {"api-token": "t", "anthropic-api-key": "k", "profile": "degree: bachelors\n"}
+    return lambda prefix: {**base, **values}
+
+
+def test_with_a_parameter_store_prefix_the_secrets_and_profile_come_from_there():
+    env = {"TRIAGE_SSM_PREFIX": "/posting-triage", "TRIAGE_TIMEOUT_S": "45",
+           "TRIAGE_API_TOKEN": "ignored", "ANTHROPIC_API_KEY": "ignored"}
+    assert settings_from_env(env, stored()) == Settings(
+        "t", 10, 45.0, "profile.yaml", api_key="k", profile_yaml="degree: bachelors\n"
+    )
+
+
+def test_without_a_prefix_parameter_store_is_never_read():
+    def never(prefix):
+        raise AssertionError("Parameter Store should not be read")
+
+    env = {"TRIAGE_API_TOKEN": "t", "ANTHROPIC_API_KEY": "k"}
+    assert settings_from_env(env, never).api_key is None  # the SDK reads the env itself
+
+
+@pytest.mark.parametrize("values, message", [
+    ({"api-token": "  "}, "TRIAGE_API_TOKEN"),
+    ({"anthropic-api-key": " "}, "anthropic-api-key"),
+])
+def test_blank_stored_secrets_stop_startup(values, message):
+    with pytest.raises(RuntimeError, match=message):
+        settings_from_env({"TRIAGE_SSM_PREFIX": "/posting-triage"}, stored(**values))
+
+
+def test_the_stored_profile_and_key_reach_the_runner(monkeypatch):
+    seen = {}
+    monkeypatch.setattr("posting_triage.api.anthropic.Anthropic", lambda **kw: seen.update(kw))
+    profile_yaml = open(EXAMPLE_PROFILE).read()
+    create_app(Settings(token=TOKEN, profile="/no/such/file.yaml", api_key="sk-stored", profile_yaml=profile_yaml))
+    assert seen["api_key"] == "sk-stored"  # and the missing file wasn't read: the stored profile was used
+
+
+def test_a_bad_stored_profile_stops_startup():
+    with pytest.raises(ProfileError, match="the stored profile"):
+        create_app(Settings(token=TOKEN, profile_yaml="degree: [unclosed"))
+
+
 def test_the_app_refuses_to_start_without_a_profile(tmp_path):
     with pytest.raises(ProfileError):
         create_app(Settings(token=TOKEN, profile=str(tmp_path / "missing.yaml")))

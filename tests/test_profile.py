@@ -4,7 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from posting_triage.profile import Profile, ProfileError, load_profile, location_matches, parse_profile
+from posting_triage.profile import (
+    Profile,
+    ProfileError,
+    load_profile,
+    location_matches,
+    parse_profile,
+    profile_from_yaml,
+)
 
 EXAMPLE = Path(__file__).parent.parent / "profile.example.yaml"
 
@@ -77,6 +84,13 @@ def test_invalid_yaml_is_reported(tmp_path):
     path.write_text("degree: [unclosed\n")
     with pytest.raises(ProfileError, match="not valid YAML"):
         load_profile(path)
+
+
+def test_profile_text_gets_the_same_checks_as_the_file():
+    # The deployed API reads the profile's YAML from Parameter Store, not a file.
+    assert profile_from_yaml(EXAMPLE.read_text()) == load_profile(EXAMPLE)
+    with pytest.raises(ProfileError, match="the stored profile is not valid YAML"):
+        profile_from_yaml("degree: [unclosed\n", source="the stored profile")
 
 
 EXAMPLE_PLACES = ("Bay Area", "Los Angeles", "Remote")

@@ -21,7 +21,8 @@ RUN apt-get update \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY posting_triage ./posting_triage
-RUN pip install --no-cache-dir .
+# The aws extra (boto3) lets the API read its settings from Parameter Store on AWS.
+RUN pip install --no-cache-dir ".[aws]"
 
 # Not root: the image's own unprivileged user. If a page ever broke out of Chromium,
 # it would land as pwuser, not root.

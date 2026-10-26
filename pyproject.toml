@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["httpx", "pytest"]  # httpx: FastAPI's TestClient
+aws = ["boto3"]  # the deployed API reads its settings from Parameter Store; the image installs it
 
 [project.scripts]
 triage = "posting_triage.cli:main"

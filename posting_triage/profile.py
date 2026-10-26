@@ -59,11 +59,19 @@ class Profile:
 def load_profile(path="profile.yaml"):
     path = Path(path)
     try:
-        data = yaml.safe_load(path.read_text())
+        text = path.read_text()
     except FileNotFoundError:
         raise ProfileError(f"{path} not found; run `triage init` to create it") from None
+    return profile_from_yaml(text, source=str(path))
+
+
+def profile_from_yaml(text, source="the profile"):
+    """The same checks as load_profile, for YAML that isn't in a file (the deployed API
+    keeps the profile in Parameter Store). `source` names it in error messages."""
+    try:
+        data = yaml.safe_load(text)
     except yaml.YAMLError as e:
-        raise ProfileError(f"{path} is not valid YAML: {e}") from None
+        raise ProfileError(f"{source} is not valid YAML: {e}") from None
     return parse_profile(data)
 
 

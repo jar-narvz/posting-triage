@@ -7,8 +7,9 @@ returns the same TriageResponse. No verdict logic lives here.
                   401 no or wrong token · 429 rate limited · 400 bad or non-public URL
                   504 timed out · 502 the Anthropic call failed
 
-Settings come from the environment (see .env.example). The app refuses to start
-without TRIAGE_API_TOKEN, ANTHROPIC_API_KEY, or a readable profile.
+Settings come from the environment (see .env.example). On AWS, TRIAGE_SSM_PREFIX names
+where the token, the Anthropic key, and the profile are kept in Parameter Store instead.
+The app refuses to start without a token, an Anthropic key, or a readable profile.
 """
 
 import asyncio
@@ -24,7 +25,8 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from posting_triage.liveness import Browser, may_need_browser
-from posting_triage.profile import load_profile
+from posting_triage.parameters import read_parameters
+from posting_triage.profile import load_profile, profile_from_yaml
 from posting_triage.ratelimit import RateLimiter
 from posting_triage.run_eval import EFFORT, MODELS
 from posting_triage.triage import DEFAULT_MODEL, TriageResponse, triage
@@ -40,32 +42,46 @@ class Settings:
     token: str
     rate_limit: int = 10  # requests per minute per token
     timeout_s: float = 90
-    profile: str = "profile.yaml"
+    profile: str = "profile.yaml"  # a path, unless profile_yaml is set
+    api_key: str | None = None  # None: the Anthropic SDK reads ANTHROPIC_API_KEY itself
+    profile_yaml: str | None = None  # the profile itself, as kept in Parameter Store
 
 
-def settings_from_env(env=os.environ):
-    """Settings, or RuntimeError naming what's missing: the app fails closed."""
-    token = env.get("TRIAGE_API_TOKEN", "").strip()
+def settings_from_env(env=os.environ, read_parameters=read_parameters):
+    """Settings, or RuntimeError naming what's missing: the app fails closed. With
+    TRIAGE_SSM_PREFIX set, the token, key, and profile come only from Parameter Store."""
+    prefix = env.get("TRIAGE_SSM_PREFIX", "").strip()
+    if prefix:
+        stored = read_parameters(prefix)
+        token = stored["api-token"].strip()
+        api_key = stored["anthropic-api-key"].strip()
+        profile_yaml = stored["profile"]
+    else:
+        token, api_key, profile_yaml = env.get("TRIAGE_API_TOKEN", "").strip(), None, None
+        if not env.get("ANTHROPIC_API_KEY", "").strip():
+            raise RuntimeError("ANTHROPIC_API_KEY is not set")
     if not token:
         raise RuntimeError("TRIAGE_API_TOKEN is not set: the API won't start without a token")
-    if not env.get("ANTHROPIC_API_KEY", "").strip():
-        raise RuntimeError("ANTHROPIC_API_KEY is not set")
+    if api_key == "":
+        raise RuntimeError("the stored anthropic-api-key is empty")
     try:
         return Settings(
             token=token,
             rate_limit=int(env.get("TRIAGE_RATE_LIMIT", "10")),
             timeout_s=float(env.get("TRIAGE_TIMEOUT_S", "90")),
             profile=env.get("TRIAGE_PROFILE", "profile.yaml"),
+            api_key=api_key,
+            profile_yaml=profile_yaml,
         )
     except ValueError as e:
         raise RuntimeError(f"TRIAGE_RATE_LIMIT and TRIAGE_TIMEOUT_S must be numbers: {e}") from None
 
 
-def pipeline_runner(profile):
+def pipeline_runner(profile, api_key=None):
     """run(url, model) -> Triage, the real thing: Claude, plus a browser for links no board
     API covers or whose API may refuse (Workday). Chromium starts only if a page is fetched.
     Each call gets its own browser (sync Playwright can't be shared across threads)."""
-    client = anthropic.Anthropic(timeout=CLIENT_TIMEOUT_S, max_retries=CLIENT_RETRIES)
+    client = anthropic.Anthropic(api_key=api_key, timeout=CLIENT_TIMEOUT_S, max_retries=CLIENT_RETRIES)
 
     def run(url, model):
         with contextlib.ExitStack() as stack:
@@ -84,8 +100,12 @@ def create_app(settings=None, run=None, check_url=public_url, clock=time.monoton
     """The FastAPI app. `run(url, model) -> Triage` and `check_url` are swappable so tests
     never call Claude, open a browser, or look up DNS; by default it's pipeline_runner."""
     settings = settings or settings_from_env()
-    if run is None:
-        run = pipeline_runner(load_profile(settings.profile))  # a ProfileError stops startup
+    if run is None:  # a ProfileError stops startup
+        if settings.profile_yaml is not None:
+            profile = profile_from_yaml(settings.profile_yaml, source="the stored profile")
+        else:
+            profile = load_profile(settings.profile)
+        run = pipeline_runner(profile, settings.api_key)
     limiter = RateLimiter(settings.rate_limit, clock=clock)
     slots = asyncio.Semaphore(MAX_CONCURRENT)
     version = importlib.metadata.version("posting-triage")
