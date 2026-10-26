@@ -160,6 +160,20 @@ aws iam put-role-policy --role-name posting-triage-lambda --policy-name read-par
 
 To check the role, `aws iam simulate-principal-policy` needs `--context-entries "ContextKeyName=aws:RequestedRegion,ContextKeyValues=us-east-2,ContextKeyType=string"`: without a region, the account's region lock (an organization policy) denies everything in the simulation.
 
+5. The function, pinned to the image's digest (the `imageDigest` from `aws ecr describe-images`), so it runs exactly the bytes that were tested and scanned. 120 s is longer than the app's own 90 s limit, so the app answers with its 504 before Lambda stops it:
+
+```bash
+DIGEST=$(aws ecr describe-images --repository-name posting-triage --image-ids imageTag=${TAG} --query 'imageDetails[0].imageDigest' --output text --profile triage --region us-east-2)
+aws lambda create-function --function-name posting-triage --package-type Image \
+  --code ImageUri="${REG}/posting-triage@${DIGEST}" \
+  --role "arn:aws:iam::${ACCT}:role/posting-triage-lambda" \
+  --architectures arm64 --memory-size 2048 --timeout 120 \
+  --environment "Variables={TRIAGE_SSM_PREFIX=/posting-triage,TRIAGE_DOCS=off,HOME=/tmp}" \
+  --logging-config LogFormat=Text,LogGroup=/aws/lambda/posting-triage \
+  --profile triage --region us-east-2
+aws lambda wait function-active-v2 --function-name posting-triage --profile triage --region us-east-2
+```
+
 Teardown, in this order (the function first, then what it uses), then revoke the key in the Anthropic Console:
 
 ```bash
