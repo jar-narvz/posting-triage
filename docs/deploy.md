@@ -120,6 +120,35 @@ The function's own settings hold no secrets: `TRIAGE_SSM_PREFIX=/posting-triage`
 
 The Anthropic key comes from its own Console workspace with a $5 monthly spend limit. It's typed straight into the parameter, never into a file or chat.
 
+#### Creation commands (run in this order)
+
+1. Parameters (SecureString, standard tier, the default `aws/ssm` key). Run these in a real terminal: the hidden prompt needs a keyboard.
+
+```bash
+read -rs "KEY?Anthropic key: " && aws ssm put-parameter --name /posting-triage/anthropic-api-key --type SecureString --value "$KEY" --profile triage --region us-east-2 && unset KEY
+aws ssm put-parameter --name /posting-triage/api-token --type SecureString --value "$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" --profile triage --region us-east-2
+aws ssm put-parameter --name /posting-triage/profile --type SecureString --value file://profile.yaml --profile triage --region us-east-2
+```
+
+2. ECR repository (immutable tags, scan on push) that keeps the 3 newest images, then the image, tagged with its commit:
+
+```bash
+aws ecr create-repository --repository-name posting-triage --image-tag-mutability IMMUTABLE --image-scanning-configuration scanOnPush=true --profile triage --region us-east-2
+aws ecr put-lifecycle-policy --repository-name posting-triage --lifecycle-policy-text '{"rules":[{"rulePriority":1,"description":"Keep only the 3 newest images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":3},"action":{"type":"expire"}}]}' --profile triage --region us-east-2
+REG="${ACCT}.dkr.ecr.us-east-2.amazonaws.com"
+TAG=$(git rev-parse --short HEAD)
+aws ecr get-login-password --profile triage --region us-east-2 | docker login --username AWS --password-stdin "$REG"
+docker build --platform linux/arm64 --provenance=false -t "posting-triage:${TAG}" .
+docker tag "posting-triage:${TAG}" "$REG/posting-triage:${TAG}" && docker push "$REG/posting-triage:${TAG}"
+```
+
+3. Log group with 14-day retention, made before the function (otherwise Lambda creates it with no expiry):
+
+```bash
+aws logs create-log-group --log-group-name /aws/lambda/posting-triage --profile triage --region us-east-2
+aws logs put-retention-policy --log-group-name /aws/lambda/posting-triage --retention-in-days 14 --profile triage --region us-east-2
+```
+
 Teardown, in this order (the function first, then what it uses), then revoke the key in the Anthropic Console:
 
 ```bash
