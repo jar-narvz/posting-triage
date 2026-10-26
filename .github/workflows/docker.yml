@@ -5,11 +5,11 @@ on:
   pull_request:
 
 permissions:
-  contents: read  # build and test only; nothing is pushed to a registry yet
+  contents: read  # build and test only; deploys run from the Mac (scripts/deploy.sh)
 
 jobs:
   image:
-    runs-on: ubuntu-latest  # amd64, the architecture AWS will likely run
+    runs-on: ubuntu-24.04-arm  # arm64, the architecture Lambda runs; free for public repos
     steps:
       - uses: actions/checkout@v4
       - name: Build
@@ -17,6 +17,7 @@ jobs:
       - name: Image size
         run: |
           size=$(docker image inspect posting-triage:ci --format '{{.Size}}')
-          echo "Image size: $((size / 1000000)) MB (linux/amd64)" | tee -a "$GITHUB_STEP_SUMMARY"
+          arch=$(docker image inspect posting-triage:ci --format '{{.Os}}/{{.Architecture}}')
+          echo "Image size: $((size / 1000000)) MB ($arch)" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Smoke test
         run: scripts/docker_smoke.sh posting-triage:ci

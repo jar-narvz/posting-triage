@@ -67,7 +67,7 @@ Secrets and the profile are supplied when the container runs, never built in. `.
 | Zombie processes after the load test | 0 |
 | `/dev/shm` | Docker's default 64 MB was enough |
 
-Peak memory comes from the container's cgroup counter (`/sys/fs/cgroup/memory.peak`), which includes file cache; `docker stats` peaked at 580 MiB. Size the container at 1 GB or more. AWS will likely run amd64, so the amd64 image size (reported by CI on each push) and memory should be re-checked there.
+Peak memory comes from the container's cgroup counter (`/sys/fs/cgroup/memory.peak`), which includes file cache; `docker stats` peaked at 580 MiB. Size the container at 1 GB or more. Lambda runs this same arm64 image (CI builds it on GitHub's arm64 runner too); there a browser triage peaked at 804 MB of the function's 2048 MB (Oct 26).
 
 ## Smoke test
 
