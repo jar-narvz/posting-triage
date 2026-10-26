@@ -18,7 +18,7 @@ PROFILE = load_profile(Path(__file__).parent.parent / "profile.example.yaml")
 GH_POSTING = "https://job-boards.greenhouse.io/acme/jobs/123"
 GH_API = "https://boards-api.greenhouse.io/v1/boards/acme/jobs/123"
 GH_BOARD = "https://boards-api.greenhouse.io/v1/boards/acme"
-WORKDAY = "https://acme.wd1.myworkdayjobs.com/en-US/ext/job/SWE_JR1"
+BROWSER_LINK = "https://lifeattiktok.com/search/7512345"  # no board API: the browser reads it
 
 
 class FakeBrowser:
@@ -49,18 +49,24 @@ def test_dead_posting_whose_board_is_gone_gets_no_careers_page():
 
 def test_unreadable_page_is_flagged_never_dead():
     browser = FakeBrowser(PostingText("unreadable", "browser", detail="HTTP 403"))
-    result = triage(WORKDAY, PROFILE, never_called, "m", browser=browser)
+    result = triage(BROWSER_LINK, PROFILE, never_called, "m", browser=browser)
     assert (result.verdict, result.field, result.careers_page, result.detail) == ("flag", "liveness", None, "HTTP 403")
 
 
 def test_no_browser_for_a_non_board_link_is_flagged():
-    result = triage(WORKDAY, PROFILE, never_called, "m", get=fake_get({}))
+    result = triage(BROWSER_LINK, PROFILE, never_called, "m", get=fake_get({}))
     assert (result.verdict, result.field) == ("flag", "liveness")
+
+
+def test_dead_workday_posting_links_its_site_without_calling_the_llm():
+    url = "https://acme.wd1.myworkdayjobs.com/en-US/ext/job/Austin-TX/SWE_JR1"
+    result = triage(url, PROFILE, never_called, "m", get=fake_get({}))  # the API answers 404
+    assert result == Triage(url, DEAD, "liveness", None, "https://acme.wd1.myworkdayjobs.com/ext", "HTTP 404")
 
 
 def test_a_live_page_with_no_text_is_flagged_not_sent_to_the_llm():
     browser = FakeBrowser(PostingText("ok", "browser", "  \n "))
-    result = triage(WORKDAY, PROFILE, never_called, "m", browser=browser)
+    result = triage(BROWSER_LINK, PROFILE, never_called, "m", browser=browser)
     assert (result.verdict, result.field, result.detail) == ("flag", "liveness", "no posting text")
 
 
@@ -68,7 +74,7 @@ def test_live_posting_gets_the_pipeline_verdict():
     for posting in generate(n=20, seed=5):
         browser = FakeBrowser(PostingText("ok", "browser", posting["text"]))
         call = FakeClient(reply(perfect(posting).model_dump()))
-        result = triage(WORKDAY, PROFILE, call, "m", browser=browser)
+        result = triage(BROWSER_LINK, PROFILE, call, "m", browser=browser)
         assert (result.verdict, result.field) == (posting["gold_verdict"], posting["deciding_field"]), posting["id"]
         assert result.careers_page is None
         assert call.requests[0]["model"] == "m"

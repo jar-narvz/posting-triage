@@ -11,6 +11,7 @@ from posting_triage.liveness import (
     fetch_posting,
     html_to_text,
     live_careers_page,
+    may_need_browser,
     tidy_text,
 )
 from posting_triage.urlguard import BlockedURL
@@ -35,6 +36,12 @@ UUID = "3d182b7f-482e-45b2-8668-f04f0b5fda8e"
         (f"https://jobs.ashbyhq.com/spruceid/{UUID}", BoardJob("ashby", "spruceid", UUID)),
         (f"https://jobs.ashbyhq.com/crusoe/{UUID}/application?embed=true",
          BoardJob("ashby", "crusoe", UUID)),
+        ("https://netflix.wd108.myworkdayjobs.com/en-US/netflix/job/Los-Gatos/SWE-Intern_JR42989",
+         BoardJob("workday", "netflix", "Los-Gatos/SWE-Intern_JR42989", host="netflix.wd108.myworkdayjobs.com")),
+        ("https://ncr.wd1.myworkdayjobs.com/ext_us/job/ATLANTA-GA-USA/SWE_R1",  # no locale segment
+         BoardJob("workday", "ext_us", "ATLANTA-GA-USA/SWE_R1", host="ncr.wd1.myworkdayjobs.com")),
+        ("https://GM.WD5.myworkdayjobs.com/en-CA/Careers_GM/job/Sunnyvale/MLE_JR-1",
+         BoardJob("workday", "Careers_GM", "Sunnyvale/MLE_JR-1", host="gm.wd5.myworkdayjobs.com")),
     ],
 )
 def test_board_urls_are_recognized(url, expected):
@@ -49,12 +56,28 @@ def test_board_urls_are_recognized(url, expected):
         "https://jobs.lever.co/kobie",
         "https://jobs.ashbyhq.com/spruceid",
         "https://jobs.ashbyhq.com/spruceid/not-a-uuid",
-        "https://netflix.wd108.myworkdayjobs.com/en-US/netflix/job/Los-Gatos/SWE-Intern_JR42989",
         "https://lifeattiktok.com/search/7512345",
+        # Workday look-alikes: the API request goes to the posting's own host, so only the
+        # exact {tenant}.wd{N}.myworkdayjobs.com shape counts.
+        "https://acme.wd1.myworkdayjobs.com.attacker.example/ext/job/SWE_JR1",
+        "https://acme.myworkdayjobs.com/ext/job/SWE_JR1",  # no wd{N}
+        "https://acme.wd1.myworkdayjobs.com:8443/ext/job/SWE_JR1",  # a port
+        "https://me@acme.wd1.myworkdayjobs.com/ext/job/SWE_JR1",  # a login
+        "https://acme.wd1.myworkdayjobs.com/en-US/ext",  # board page, not a job
+        "https://acme.wd1.myworkdayjobs.com/en-US/ext/details/SWE_JR1",
     ],
 )
 def test_other_urls_go_to_the_browser(url):
     assert board_job(url) is None
+
+
+@pytest.mark.parametrize("url, expected", [
+    ("https://job-boards.greenhouse.io/acme/jobs/1", False),  # the board API answers alone
+    ("https://acme.wd1.myworkdayjobs.com/ext/job/SWE_JR1", True),  # the API may refuse (403)
+    ("https://lifeattiktok.com/search/7512345", True),  # no board API
+])
+def test_may_need_browser(url, expected):
+    assert may_need_browser(url) is expected
 
 
 @pytest.mark.parametrize(
@@ -67,7 +90,7 @@ def test_other_urls_go_to_the_browser(url):
         (f"https://jobs.eu.lever.co/acme/{UUID}", "https://jobs.eu.lever.co/acme"),
         (f"https://jobs.ashbyhq.com/crusoe/{UUID}/application?embed=true", "https://jobs.ashbyhq.com/crusoe"),
         ("https://netflix.wd108.myworkdayjobs.com/en-US/netflix/job/Los-Gatos/SWE-Intern_JR42989",
-         "https://netflix.wd108.myworkdayjobs.com/"),
+         "https://netflix.wd108.myworkdayjobs.com/netflix"),
         ("https://careers.withwaymo.com/jobs?gh_jid=8202025", "https://careers.withwaymo.com/"),
         ("https://Lifeattiktok.com/search/7512345", "https://lifeattiktok.com/"),
     ],
@@ -86,7 +109,8 @@ def test_every_board_url_in_candidates_parses():
         urls = [row["url"] for row in csv.DictReader(f)]
     board_hosted = [
         u for u in urls
-        if any(h in u for h in ("://boards.greenhouse.io/", "://job-boards.", "://jobs.lever.co/", "://jobs.ashbyhq.com/"))
+        if any(h in u for h in ("://boards.greenhouse.io/", "://job-boards.", "://jobs.lever.co/", "://jobs.ashbyhq.com/",
+                                ".myworkdayjobs.com/"))
     ]
     assert board_hosted, "expected some board-hosted URLs in the sample"
     assert [u for u in board_hosted if board_job(u) is None] == []
@@ -127,7 +151,10 @@ def fake_get(responses):
 
 
 GH_URL = "https://boards-api.greenhouse.io/v1/boards/acme/jobs/123"
-WORKDAY_URL = "https://acme.wd1.myworkdayjobs.com/en-US/ext/job/SWE_JR1"
+WORKDAY_URL = "https://acme.wd1.myworkdayjobs.com/en-US/ext/job/Austin-TX/SWE_JR1"
+WORKDAY_API = "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/ext/job/Austin-TX/SWE_JR1"
+WORKDAY_JOB = BoardJob("workday", "ext", "Austin-TX/SWE_JR1", host="acme.wd1.myworkdayjobs.com")
+BROWSER_LINK = "https://lifeattiktok.com/search/7512345"
 
 
 def test_greenhouse_unescapes_content():
@@ -184,9 +211,46 @@ def test_ashby_job_missing_from_board_is_not_found():
     )
 
 
+def test_workday_reads_the_posting_from_its_json():
+    get = fake_get({WORKDAY_API: (200, {"jobPostingInfo": {
+        "title": "Software Engineer Intern",
+        "location": "Austin, TX",
+        "jobDescription": "<p>Build tools.</p><ul><li>BS in CS</li></ul>",
+    }})})
+    result = fetch_from_board(WORKDAY_JOB, get)
+    assert result == PostingText("ok", "workday", "Software Engineer Intern\nAustin, TX\nBuild tools.\n- BS in CS")
+    assert get.calls == [WORKDAY_API]
+
+
+def test_workday_includes_extra_locations_and_remote_type():
+    get = fake_get({WORKDAY_API: (200, {"jobPostingInfo": {
+        "title": "Data Engineer Intern",
+        "location": "Boston, MA",
+        "additionalLocations": ["Remote - US"],
+        "remoteType": "Hybrid",
+        "jobDescription": "<p>Pipelines.</p>",
+    }})})
+    assert fetch_from_board(WORKDAY_JOB, get).text == (
+        "Data Engineer Intern\nBoston, MA; Remote - US\nremote type: Hybrid\nPipelines."
+    )
+
+
+@pytest.mark.parametrize("status, body", [
+    (403, None),  # the company refuses the API
+    (422, None),  # wrong tenant or site in the URL
+    (0, None),  # no answer
+    (200, {"errorCode": "S1"}),  # 200 without a posting in it
+    (200, ["not", "a", "dict"]),
+])
+def test_workday_answers_other_than_a_posting_or_404_are_unreadable(status, body):
+    result = fetch_from_board(WORKDAY_JOB, fake_get({WORKDAY_API: (status, body)}))
+    assert result == PostingText("unreadable", "workday", detail=f"HTTP {status}")
+
+
 @pytest.mark.parametrize(
     "job",
-    [BoardJob("greenhouse", "acme", "123"), BoardJob("lever", "acme", UUID), BoardJob("ashby", "acme", UUID)],
+    [BoardJob("greenhouse", "acme", "123"), BoardJob("lever", "acme", UUID), BoardJob("ashby", "acme", UUID),
+     WORKDAY_JOB],
 )
 def test_404_is_not_found(job):
     assert fetch_from_board(job, fake_get({})).status == "not_found"
@@ -245,7 +309,14 @@ def test_dead_ashby_posting_needs_no_second_request(detail, expected):
 def test_dead_non_board_posting_gets_the_front_page_unchecked():
     get = fake_get({})
     posting = PostingText("not_found", "browser", detail="HTTP 404")
-    assert live_careers_page(WORKDAY_URL, posting, get) == "https://acme.wd1.myworkdayjobs.com/"
+    assert live_careers_page(BROWSER_LINK, posting, get) == "https://lifeattiktok.com/"
+    assert get.calls == []
+
+
+def test_dead_workday_posting_gets_its_site_unchecked():
+    get = fake_get({})
+    posting = PostingText("not_found", "workday", detail="HTTP 404")
+    assert live_careers_page(WORKDAY_URL, posting, get) == "https://acme.wd1.myworkdayjobs.com/ext"
     assert get.calls == []
 
 
@@ -268,9 +339,33 @@ def test_fetch_posting_routes_board_urls_to_the_api():
 
 def test_fetch_posting_sends_other_urls_to_the_browser():
     browser = FakeBrowser()
-    url = "https://acme.wd1.myworkdayjobs.com/en-US/ext/job/SWE_JR1"
-    assert fetch_posting(url, browser, fake_get({})) == PostingText("ok", "browser", "rendered")
-    assert browser.urls == [url]
+    assert fetch_posting(BROWSER_LINK, browser, fake_get({})) == PostingText("ok", "browser", "rendered")
+    assert browser.urls == [BROWSER_LINK]
+
+
+def test_workday_api_answer_needs_no_browser():
+    browser = FakeBrowser()
+    get = fake_get({WORKDAY_API: (200, {"jobPostingInfo": {"title": "SWE", "jobDescription": "<p>x</p>"}})})
+    assert fetch_posting(WORKDAY_URL, browser, get).source == "workday"
+    assert browser.urls == []
+
+
+def test_workday_404_is_not_found_without_the_browser():
+    browser = FakeBrowser()
+    assert fetch_posting(WORKDAY_URL, browser, fake_get({})).status == "not_found"
+    assert browser.urls == []
+
+
+def test_workday_refusal_falls_back_to_the_browser():
+    browser = FakeBrowser()
+    get = fake_get({WORKDAY_API: (403, None)})
+    assert fetch_posting(WORKDAY_URL, browser, get) == PostingText("ok", "browser", "rendered")
+    assert browser.urls == [WORKDAY_URL]
+
+
+def test_workday_refusal_without_a_browser_stays_unreadable():
+    get = fake_get({WORKDAY_API: (403, None)})
+    assert fetch_posting(WORKDAY_URL, None, get) == PostingText("unreadable", "workday", detail="HTTP 403")
 
 
 def test_fetch_posting_without_a_browser_is_unreadable():

@@ -23,7 +23,7 @@ import anthropic
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from posting_triage.liveness import Browser, board_job
+from posting_triage.liveness import Browser, may_need_browser
 from posting_triage.profile import load_profile
 from posting_triage.ratelimit import RateLimiter
 from posting_triage.run_eval import EFFORT, MODELS
@@ -62,14 +62,14 @@ def settings_from_env(env=os.environ):
 
 
 def pipeline_runner(profile):
-    """run(url, model) -> Triage, the real thing: Claude, plus a browser only for links
-    no board API covers. Each call gets its own browser (sync Playwright can't be
-    shared across threads)."""
+    """run(url, model) -> Triage, the real thing: Claude, plus a browser for links no board
+    API covers or whose API may refuse (Workday). Chromium starts only if a page is fetched.
+    Each call gets its own browser (sync Playwright can't be shared across threads)."""
     client = anthropic.Anthropic(timeout=CLIENT_TIMEOUT_S, max_retries=CLIENT_RETRIES)
 
     def run(url, model):
         with contextlib.ExitStack() as stack:
-            browser = None if board_job(url) else stack.enter_context(Browser())
+            browser = stack.enter_context(Browser()) if may_need_browser(url) else None
             return triage(url, profile, client.messages.create, model, browser, effort=EFFORT)
 
     return run

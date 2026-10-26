@@ -9,7 +9,7 @@ from posting_triage.triage import Triage, TriageResponse
 
 EXAMPLE_PROFILE = str(Path(__file__).parent.parent / "profile.example.yaml")
 BOARD_URL = "https://job-boards.greenhouse.io/acme/jobs/1"
-WORKDAY_URL = "https://acme.wd1.myworkdayjobs.com/job/2"
+BROWSER_URL = "https://lifeattiktok.com/search/2"  # no board API: needs the browser
 
 
 @pytest.mark.parametrize("result, expected", [
@@ -45,13 +45,13 @@ def run_env(monkeypatch):
 
 
 def test_run_triages_each_url_with_the_default_model(run_env, capsys):
-    assert main(["run", BOARD_URL, WORKDAY_URL, "--profile", EXAMPLE_PROFILE]) == 0
+    assert main(["run", BOARD_URL, BROWSER_URL, "--profile", EXAMPLE_PROFILE]) == 0
     assert [(url, model, effort) for url, model, _, effort in run_env] == [
-        (BOARD_URL, DEFAULT_MODEL, "medium"), (WORKDAY_URL, DEFAULT_MODEL, "medium")]
+        (BOARD_URL, DEFAULT_MODEL, "medium"), (BROWSER_URL, DEFAULT_MODEL, "medium")]
     assert run_env[0][2] is None  # no browser for a board-API link
     assert isinstance(run_env[1][2], FakeBrowser)
     assert FakeBrowser.closed
-    assert capsys.readouterr().out == f"APPLY  {BOARD_URL}\nAPPLY  {WORKDAY_URL}\n"
+    assert capsys.readouterr().out == f"APPLY  {BOARD_URL}\nAPPLY  {BROWSER_URL}\n"
 
 
 def test_run_takes_another_model(run_env):
@@ -84,18 +84,18 @@ def test_an_api_error_on_one_posting_still_triages_the_rest(run_env, monkeypatch
         return Triage(url, "skip", "degree", "PhD required")
 
     monkeypatch.setattr("posting_triage.cli.triage", flaky)
-    assert main(["run", BOARD_URL, WORKDAY_URL, "--profile", EXAMPLE_PROFILE]) == 1
+    assert main(["run", BOARD_URL, BROWSER_URL, "--profile", EXAMPLE_PROFILE]) == 1
     out = capsys.readouterr().out
     assert f"ERROR  {BOARD_URL}\n       FakeAPIError: connection reset" in out
-    assert f'SKIP   {WORKDAY_URL}\n       degree: "PhD required"' in out
+    assert f'SKIP   {BROWSER_URL}\n       degree: "PhD required"' in out
 
 
 def test_run_json_prints_one_response_per_url(run_env, capsys):
-    assert main(["run", BOARD_URL, WORKDAY_URL, "--profile", EXAMPLE_PROFILE, "--json"]) == 0
+    assert main(["run", BOARD_URL, BROWSER_URL, "--profile", EXAMPLE_PROFILE, "--json"]) == 0
     lines = capsys.readouterr().out.splitlines()
     responses = [TriageResponse.model_validate(json.loads(line)) for line in lines]
     assert [(r.url, r.verdict, r.model) for r in responses] == [
-        (BOARD_URL, "apply", DEFAULT_MODEL), (WORKDAY_URL, "apply", DEFAULT_MODEL)]
+        (BOARD_URL, "apply", DEFAULT_MODEL), (BROWSER_URL, "apply", DEFAULT_MODEL)]
     assert all(r.latency_ms >= 0 for r in responses)
 
 
@@ -106,10 +106,10 @@ def test_run_json_sends_errors_to_stderr(run_env, monkeypatch, capsys):
         return Triage(url, "skip", "degree", "PhD required")
 
     monkeypatch.setattr("posting_triage.cli.triage", flaky)
-    assert main(["run", BOARD_URL, WORKDAY_URL, "--profile", EXAMPLE_PROFILE, "--json"]) == 1
+    assert main(["run", BOARD_URL, BROWSER_URL, "--profile", EXAMPLE_PROFILE, "--json"]) == 1
     captured = capsys.readouterr()
     assert f"ERROR  {BOARD_URL}" in captured.err
-    assert [json.loads(line)["url"] for line in captured.out.splitlines()] == [WORKDAY_URL]
+    assert [json.loads(line)["url"] for line in captured.out.splitlines()] == [BROWSER_URL]
 
 
 @pytest.fixture
@@ -175,7 +175,7 @@ def test_cache_command_fetches_every_candidate(tmp_path, monkeypatch, capsys):
     candidates.write_text(
         "id,url,company,title,location,source,section,tags\n"
         "aaa,https://boards.greenhouse.io/acme/jobs/1,Acme,SWE,SF,s,x,\n"
-        "bbb,https://acme.wd1.myworkdayjobs.com/job/2,Acme,MLE,SF,s,x,\n"
+        "bbb,https://lifeattiktok.com/search/2,Acme,MLE,SF,s,x,\n"
     )
     fetched = []
 
@@ -191,7 +191,7 @@ def test_cache_command_fetches_every_candidate(tmp_path, monkeypatch, capsys):
     assert main(args) == 0
     assert [url for url, _ in fetched] == [
         "https://boards.greenhouse.io/acme/jobs/1",
-        "https://acme.wd1.myworkdayjobs.com/job/2",
+        "https://lifeattiktok.com/search/2",
     ]
     assert fetched[0][1] is None  # browser not started for the API link
     assert isinstance(fetched[1][1], FakeBrowser)

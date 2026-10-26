@@ -13,7 +13,7 @@ import yaml
 
 from posting_triage.cache import CACHE_DIR, cache_all
 from posting_triage.label import Terminal, run_session
-from posting_triage.liveness import Browser, board_job, fetch_posting
+from posting_triage.liveness import Browser, fetch_posting, may_need_browser
 from posting_triage.profile import (
     DEGREES,
     ROLE_TYPES,
@@ -156,14 +156,14 @@ def format_profile(data):
 
 @contextlib.contextmanager
 def browser_when_needed(no_browser=False):
-    """Yields browser_for(url): None for board-API links, else one Chromium, started only
-    when the first such link needs it and shared by every later one."""
+    """Yields browser_for(url): None for links a board API alone answers, else one Browser,
+    shared by every later link (Chromium itself starts on the first page it fetches)."""
     with contextlib.ExitStack() as stack:
         browser = None
 
         def browser_for(url):
             nonlocal browser
-            if no_browser or board_job(url) is not None:
+            if no_browser or not may_need_browser(url):
                 return None
             if browser is None:
                 browser = stack.enter_context(Browser())

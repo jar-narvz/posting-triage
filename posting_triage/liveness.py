@@ -1,10 +1,13 @@
-"""Stage 1: is the posting live? Greenhouse, Lever, and Ashby go through their public
+"""Stage 1: is the posting live? Greenhouse, Lever, Ashby, and Workday go through their
 job-board APIs; anything else opens in headless Chromium (Playwright).
 
 API docs (checked Oct 2026):
   Greenhouse  https://developers.greenhouse.io/job-board.html
   Lever       https://github.com/lever/postings-api
   Ashby       https://developers.ashbyhq.com/docs/public-job-posting-api
+  Workday     undocumented: the JSON endpoint Workday's own job page calls
+              (/wday/cxs/{tenant}/{site}/job/{path}). Some companies refuse it (403),
+              so a Workday answer other than 200 or 404 falls back to the browser.
 """
 
 import html
@@ -23,14 +26,21 @@ from posting_triage.proxy import FilteringProxy, public_destination
 class BoardJob:
     """A posting that one of the board APIs can look up."""
 
-    board: str  # greenhouse | lever | ashby
-    token: str  # the company's board name in that system
-    job_id: str
+    board: str  # greenhouse | lever | ashby | workday
+    token: str  # the company's board name in that system (Workday: the site)
+    job_id: str  # Workday: the job path after /job/, e.g. "Austin-TX/SWE-Intern_R123"
     eu: bool = False  # Lever runs a separate EU instance
+    host: str = ""  # Workday: the posting's host, {tenant}.wd{N}.myworkdayjobs.com
+
+
+# Only this exact host shape: the API request goes to the posting's own host, so nothing
+# looser (a port, a login, a look-alike domain) may get through.
+WORKDAY_HOST = re.compile(r"[a-z0-9-]+\.wd\d+\.myworkdayjobs\.com")
+LOCALE = re.compile(r"[a-zA-Z]{2}-[a-zA-Z]{2}")  # optional first path segment, e.g. en-US
 
 
 def board_job(url):
-    """Return the BoardJob for a Greenhouse, Lever, or Ashby posting URL, else None.
+    """Return the BoardJob for a Greenhouse, Lever, Ashby, or Workday posting URL, else None.
 
     Company-hosted pages that only carry ?gh_jid= are not matched: the board token
     isn't in the URL, so those go to the browser instead.
@@ -58,13 +68,27 @@ def board_job(url):
         if len(path) >= 2 and is_uuid(path[1]):
             return BoardJob("ashby", path[0], path[1])
 
+    if WORKDAY_HOST.fullmatch(host):
+        # [/{locale}]/{site}/job/{path...}
+        if path and LOCALE.fullmatch(path[0]):
+            path = path[1:]
+        if len(path) >= 3 and path[1] == "job":
+            return BoardJob("workday", path[0], "/".join(path[2:]), host=host)
+
     return None
+
+
+def may_need_browser(url):
+    """True unless a board API alone answers for this link. Workday's API can refuse
+    (403), so Workday links keep a browser in reserve; Browser only starts if used."""
+    job = board_job(url)
+    return job is None or job.board == "workday"
 
 
 def careers_page(url):
     """Where to send someone when a posting is DEAD: the company's job board for Greenhouse,
-    Lever, and Ashby links, else the site's front page. The posting's own host is kept, so
-    EU boards and older Greenhouse hosts stay on the instance the company uses."""
+    Lever, Ashby, and Workday links, else the site's front page. The posting's own host is
+    kept, so EU boards and older Greenhouse hosts stay on the instance the company uses."""
     parts = urlsplit(url)
     job = board_job(url)
     path = f"/{job.token}" if job else "/"
@@ -131,7 +155,7 @@ class PostingText:
     """What one fetch found. Deciding DEAD vs FLAG from this is Phase 4's job."""
 
     status: str  # ok | not_found | unreadable
-    source: str  # greenhouse | lever | ashby | browser
+    source: str  # greenhouse | lever | ashby | workday | browser
     text: str = ""
     detail: str = ""  # e.g. "HTTP 404", "not on board"
 
@@ -153,7 +177,7 @@ def get_json(url, timeout=20):
 
 def fetch_from_board(job, get=get_json):
     """Fetch one posting's text from its board API. `get` is swappable for tests."""
-    fetchers = {"greenhouse": _greenhouse, "lever": _lever, "ashby": _ashby}
+    fetchers = {"greenhouse": _greenhouse, "lever": _lever, "ashby": _ashby, "workday": _workday}
     return fetchers[job.board](job, get)
 
 
@@ -215,6 +239,32 @@ def _ashby(job, get):
             match.get("title"),
             "; ".join(loc for loc in [match.get("location", ""), *secondary] if loc),
             html_to_text(match.get("descriptionHtml") or "") or match.get("descriptionPlain", ""),
+        ),
+    )
+
+
+def _workday(job, get):
+    tenant = job.host.split(".")[0]
+    status, data = get(f"https://{job.host}/wday/cxs/{tenant}/{job.token}/job/{job.job_id}")
+    if status == 404:
+        return PostingText("not_found", "workday", detail="HTTP 404")
+    # A wrong tenant or site answers 422, and some companies refuse the API (403): neither
+    # says the posting is gone, so they're unreadable and the browser gets a turn.
+    info = data.get("jobPostingInfo") if status == 200 and isinstance(data, dict) else None
+    if not info:
+        return PostingText("unreadable", "workday", detail=f"HTTP {status}")
+    # Extra locations and the remote type sit outside the description (one posting's only
+    # remote option was an extra location, "Remote - US"), so they're added like Lever's.
+    locations = [info.get("location"), *(info.get("additionalLocations") or [])]
+    remote = info.get("remoteType")
+    return PostingText(
+        "ok",
+        "workday",
+        join_lines(
+            info.get("title"),
+            "; ".join(loc for loc in locations if loc),
+            f"remote type: {remote}" if remote else "",
+            html_to_text(info.get("jobDescription") or ""),
         ),
     )
 
@@ -320,10 +370,14 @@ def frame_texts(page, error_type, frame_timeout_ms=5_000):
 
 
 def fetch_posting(url, browser=None, get=get_json):
-    """Board API if the URL has one; otherwise the browser; otherwise unreadable."""
+    """Board API if the URL has one; otherwise the browser; otherwise unreadable.
+    An unreadable Workday API answer also falls back to the browser, when there is one."""
     job = board_job(url)
     if job:
-        return fetch_from_board(job, get)
+        posting = fetch_from_board(job, get)
+        if job.board != "workday" or posting.status != "unreadable" or browser is None:
+            return posting
+        return browser.fetch(url)
     if browser is None:
         return PostingText("unreadable", "browser", detail="no board API; browser not started")
     return browser.fetch(url)
@@ -335,7 +389,7 @@ def live_careers_page(url, posting, get=get_json):
     are checked; others get the front page unchecked. Only a 404 counts as gone: a board
     that won't answer keeps its link."""
     job = board_job(url)
-    if job is None:
+    if job is None or job.board == "workday":  # Workday's board listing has no GET to check
         return careers_page(url)
     if job.board == "ashby":
         gone = posting.detail == BOARD_GONE  # the Ashby fetch already downloaded the board
