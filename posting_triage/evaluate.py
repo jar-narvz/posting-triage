@@ -8,6 +8,7 @@ share of eligible postings that got an apply. FLAG and SKIP both count as "not a
 from collections import Counter
 from dataclasses import dataclass
 
+from posting_triage.extract import normalize
 from posting_triage.rules import location
 
 VERDICTS = ("apply", "flag", "skip")
@@ -92,6 +93,32 @@ def field_accuracy(gold_rows, predicted_rows, profile):
         for field in FIELD_COLUMNS:
             right[field] += predicted is not None and same_field(field, gold, predicted, profile)
     return {field: (right[field], len(gold_rows)) for field in FIELD_COLUMNS}
+
+
+def made_up_quotes(quotes_by_id, texts):
+    """(answers quoting words the posting doesn't contain, answers that quoted anything).
+    Checked the way the pipeline checks its own quotes: whitespace and quote marks
+    normalized, then an exact match. Blank quotes don't count, and an answer with no
+    quotes (an APPLY, or no usable answer) isn't counted at all."""
+    made_up = quoted = 0
+    for pid, quotes in quotes_by_id.items():
+        quotes = [q for q in (normalize(q) for q in quotes or []) if q]
+        if not quotes:
+            continue
+        quoted += 1
+        haystack = normalize(texts[pid])
+        made_up += any(q not in haystack for q in quotes)
+    return made_up, quoted
+
+
+def unquoted_verdicts(predicted, quotes_by_id):
+    """FLAG or SKIP answers that quoted nothing at all, so nothing in the posting backs them.
+    A FLAG on location is left out: a posting with no location has nothing to quote."""
+    return sum(
+        verdict != "apply" and (verdict, field) != ("flag", "location")
+        and not any(q.strip() for q in quotes_by_id.get(pid) or [])
+        for pid, (verdict, field) in predicted.items()
+    )
 
 
 def reason_accuracy(gold, predicted):

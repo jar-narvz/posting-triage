@@ -4,7 +4,7 @@ import pytest
 
 from pathlib import Path
 
-from posting_triage.evaluate import field_accuracy, reason_accuracy, score
+from posting_triage.evaluate import field_accuracy, made_up_quotes, reason_accuracy, score, unquoted_verdicts
 from posting_triage.profile import load_profile
 
 PROFILE = load_profile(Path(__file__).parent.parent / "profile.example.yaml")
@@ -129,3 +129,31 @@ def test_field_and_reason_inputs_must_line_up():
         field_accuracy([GOLD_ROW], [], PROFILE)
     with pytest.raises(ValueError):
         reason_accuracy([("apply", "")], [])
+
+
+POSTING = {"a": "Requires a BS in Computer Science.\nMust be graduating by June 2027.", "b": "Remote, US only."}
+
+
+def test_an_answer_with_any_quote_not_in_the_posting_is_made_up():
+    quotes = {"a": ["Requires a BS in Computer Science.", "PhD required"], "b": ["Remote, US only."]}
+    assert made_up_quotes(quotes, POSTING) == (1, 2)
+
+
+def test_quotes_are_matched_like_the_pipeline_matches_its_own():
+    # Line breaks, runs of spaces, and curly quote marks don't make a real quote look made up.
+    texts = {"a": "Must be  graduating\nby June 2027. It's a “new grad” role."}
+    quotes = {"a": ["Must be graduating by June 2027.", "It’s a \"new grad\" role."]}
+    assert made_up_quotes(quotes, texts) == (0, 1)
+
+
+def test_answers_without_quotes_are_not_counted():
+    # An APPLY gives no quotes, a failed answer gives None, and blank quotes are no quote.
+    assert made_up_quotes({"a": [], "b": None}, POSTING) == (0, 0)
+    assert made_up_quotes({"a": ["", "  "]}, POSTING) == (0, 0)
+
+
+def test_a_flag_or_skip_with_no_quote_is_unbacked_except_a_missing_location():
+    predicted = {"a": ("skip", "experience"), "b": ("flag", "location"), "c": ("apply", ""), "d": ("skip", "degree")}
+    quotes = {"a": [], "b": [], "c": [], "d": ["Requires a BS in Computer Science."]}
+    assert unquoted_verdicts(predicted, quotes) == 1
+    assert unquoted_verdicts({"a": ("flag", "graduation")}, {"a": None}) == 1  # no usable answer quotes nothing

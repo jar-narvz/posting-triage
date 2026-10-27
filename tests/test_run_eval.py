@@ -13,7 +13,7 @@ from posting_triage.batch import immediate
 from posting_triage.evaluate import score
 from posting_triage.profile import Profile
 from posting_triage.run_eval import (
-    collect, cost, format_confusion, load_env, real_postings, report, run_llm, texts,
+    collect, cost, format_confusion, load_env, real_postings, report, run_llm, saved_direct_quotes, texts,
 )
 from posting_triage.synthetic import generate
 from test_batch import good, message
@@ -71,6 +71,34 @@ def perfect_client(postings):
         return good(by_text[text]["id"])
 
     return immediate(SimpleNamespace(messages=SimpleNamespace(create=create)))
+
+
+def quoting_client(postings, made_up):
+    """Like perfect_client, but every direct answer is a SKIP with one quote: the posting's own
+    first line, or, for ids in `made_up`, words that aren't in it."""
+    by_text = {p["text"]: p for p in postings}
+
+    def create(**params):
+        text = params["messages"][0]["content"].split("<posting>\n", 1)[1].split("\n</posting>", 1)[0]
+        if "deciding_field" in params["output_config"]["format"]["schema"]["properties"]:
+            pid = by_text[text]["id"]
+            quote = "Requires a PhD in astrophysics." if pid in made_up else text.splitlines()[0]
+            return message({"verdict": "skip", "deciding_field": "degree", "quotes": [quote]})
+        return good(by_text[text]["id"])
+
+    return immediate(SimpleNamespace(messages=SimpleNamespace(create=create)))
+
+
+def test_direct_quotes_are_checked_against_the_posting(tmp_path, cache_dir, monkeypatch):
+    synthetic = generate(n=10, seed=7)
+    monkeypatch.setattr("test_batch.BY_ID", {p["id"]: p for p in synthetic})
+    made_up = {p["id"] for p in synthetic[:3]}
+    run_llm(quoting_client(synthetic, made_up), tmp_path, PROFILE, synthetic, [MODEL], log=lambda s: None)
+    quotes = saved_direct_quotes(tmp_path, PROFILE, MODEL, synthetic)
+    assert quotes[synthetic[0]["id"]] == ["Requires a PhD in astrophysics."]
+    text = report(10, 7, PROFILE, [], CANDIDATES, tmp_path, [MODEL])
+    row = next(line for line in text.splitlines() if line.strip().startswith("direct · haiku") and "quote nothing" in line)
+    assert "3/10 = 30%" in row and "; 0 FLAG or SKIP" in row
 
 
 def test_only_baseline_until_runs_exist(tmp_path):

@@ -81,6 +81,15 @@ def parse(message):
     return Verdict(a.verdict, field, "; ".join(q.strip() for q in a.quotes if q.strip()) or None)
 
 
+def direct_quotes(text, profile, call, model, effort="medium"):
+    """The quotes the direct prompt gave, unchecked, so the eval can check them; None if
+    there's no usable answer. Sends the same request as direct_verdict."""
+    try:
+        return DirectAnswer.model_validate_json(response_text(call(**request_params(text, profile, model, effort)))).quotes
+    except (ExtractionError, ValueError):
+        return None
+
+
 def direct_verdict(text, profile, call, model, effort="medium"):
     """One request, no retry. No usable answer counts as FLAG, as it does for the pipeline."""
     try:

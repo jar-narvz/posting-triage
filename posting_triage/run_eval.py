@@ -13,8 +13,10 @@ from pathlib import Path
 from posting_triage import cache
 from posting_triage.baseline import baseline_verdict
 from posting_triage.batch import RUNS_DIR, advance, check_requests, immediate, load_saved, step, token_totals
-from posting_triage.direct import direct_verdict
-from posting_triage.evaluate import FIELD_COLUMNS, VERDICTS, field_accuracy, reason_accuracy, score
+from posting_triage.direct import direct_quotes, direct_verdict
+from posting_triage.evaluate import (
+    FIELD_COLUMNS, VERDICTS, field_accuracy, made_up_quotes, reason_accuracy, score, unquoted_verdicts,
+)
 from posting_triage.extract import extract, pipeline_verdict, to_fields
 from posting_triage.label import read_rows
 from posting_triage.profile import load_profile
@@ -83,6 +85,17 @@ def saved_fields(run_root, model, postings):
     saved, _ = load_saved(run_dir(run_root, "pipeline", model))
     done, _ = step(texts(postings), solve, saved)
     return {pid: to_fields(e) if e else None for pid, e in done.items()}
+
+
+def saved_direct_quotes(run_root, profile, model, postings):
+    """{id: the direct prompt's quotes, or None}, replayed from its saved run, unchecked."""
+    def solve(text, call):
+        return direct_quotes(text, profile, call, model, EFFORT)
+
+    check_requests(run_dir(run_root, "direct", model), texts(postings), solve)
+    saved, _ = load_saved(run_dir(run_root, "direct", model))
+    done, _ = step(texts(postings), solve, saved)
+    return done
 
 
 def collect(run_root, profile, postings, models):
@@ -164,9 +177,25 @@ def format_fields(postings, fields, profile):
     return lines
 
 
-def section(title, postings, results, fields, profile):
+def format_quotes(postings, quotes, results):
+    """One line per direct-prompt run: how many answers quoted words the posting doesn't
+    contain, and how many FLAGs or SKIPs quoted nothing. The pipeline needs no line: there,
+    a value without a quote found in the posting can't decide the verdict."""
+    lines = ["  direct prompt quotes (unchecked, unlike the pipeline's)"]
+    for name, by_id in quotes.items():
+        here = {p["id"]: by_id[p["id"]] for p in postings if p["id"] in by_id}
+        predicted = {pid: results[name][pid] for pid in here}
+        lines.append(f"  {name:22}  {ratio(*made_up_quotes(here, texts(postings)))} of answers with quotes "
+                     f"quote words not in the posting; {unquoted_verdicts(predicted, here)} FLAG or SKIP "
+                     f"quote nothing (a missing location aside)")
+    return lines
+
+
+def section(title, postings, results, fields, profile, quotes=None):
     rows = {name: scored(postings, preds) for name, preds in results.items()}
     lines = format_scores(title, rows) + [""]
+    if quotes:
+        lines += format_quotes(postings, quotes, results) + [""]
     for name, (s, _) in rows.items():
         lines += format_confusion(name, s) + [""]
     if any(s.by_tag for s, _ in rows.values()):
@@ -180,10 +209,12 @@ def report(n, seed, profile, labels, candidates, run_root=RUNS_DIR / "main", mod
     synthetic = generate(n=n, seed=seed)
     real = real_postings(labels, candidates)
     results, fields, incomplete = collect(run_root, profile, synthetic + real, models)
-    lines = section(f"Synthetic benchmark: {n} postings, seed {seed}", synthetic, results, fields, profile)
+    quotes = {f"direct · {model.removeprefix('claude-')}": saved_direct_quotes(run_root, profile, model, synthetic + real)
+              for model in models if f"direct · {model.removeprefix('claude-')}" in results}
+    lines = section(f"Synthetic benchmark: {n} postings, seed {seed}", synthetic, results, fields, profile, quotes)
     if real:
         lines += section(f"Real spot check: {len(real)} hand-labeled postings (too few to rank approaches)",
-                         real, results, fields, profile)
+                         real, results, fields, profile, quotes)
     for name, (done, total) in incomplete.items():
         lines.append(f"not finished: {name} ({done}/{total} postings answered)")
     return "\n".join(lines).rstrip()
