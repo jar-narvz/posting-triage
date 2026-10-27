@@ -145,6 +145,17 @@ Full eval run, Oct 24, 2026: 200 synthetic postings (seed 2027) through the Batc
 - **The pipeline scored 100% on every model; the direct prompt's accuracy depended on the model** (94–100%). Most of Sonnet's direct misses broke a decision rule rather than misreading the posting: five times it FLAGged an ambiguous role type when another rule had already SKIPped. In the pipeline, "any SKIP beats any FLAG" is code, so that mistake can't happen.
 - **Haiku is the default model.** It ties the best score for about 1/20 the cost of Opus (the rule: the cheapest model within 5 points of the best apply precision).
 
+**Why not just ask an LLM?**
+
+On accuracy alone, you mostly wouldn't need the pipeline: with Haiku, the direct prompt scored 99.5% for $0.03 against the pipeline's 100% for $0.05, and this benchmark is too easy to show a bigger gap. The case for the pipeline is what the accuracy column doesn't measure:
+
+- **Its reasons are guaranteed, not just likely.** The direct prompt is told to quote the posting word for word, and here it did: none of its 377 answers with quotes (synthetic and real, all three models) quoted words that aren't in the posting. But nothing checks that, and one Sonnet answer was a SKIP with no quote at all, on a posting that should have been a FLAG. In the pipeline, a value without a quote found in the posting can't decide the verdict, so that answer couldn't happen.
+- **Its rules can't drift.** Sonnet's direct accuracy fell to 94%, mostly by breaking the decision order rather than misreading postings. In the pipeline, the order is tested Python code, the same on every model.
+- **Its mistakes point somewhere.** A wrong pipeline answer names the field that was misread, which can be tested and fixed on its own; a wrong direct answer is one judgment you can only re-prompt.
+- **Your profile isn't in the prompt.** The LLM only reads the posting, the same way for everyone; changing your profile changes only the rules, with nothing to re-prompt or re-test.
+
+The price difference is about $0.0001 a posting; the real cost is the extra code.
+
 **How far to trust it**
 
 - **The synthetic scores are an upper bound.** Postings are generated from a target verdict, a deciding field, and a hand-reviewed phrase library, so the right answers are known by construction, not computed by the rules being tested. The benchmark is near its ceiling: it shows the approaches tie at the top, not by how much the pipeline would win on messier text.
