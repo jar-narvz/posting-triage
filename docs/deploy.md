@@ -1,6 +1,6 @@
 # Deploying posting-triage
 
-One Docker image runs both the REST API (its default command) and the CLI (design decision 10). This page covers building and running it locally, what it needs, what was measured, and how to keep it patched. The AWS deploy will be added here, with a teardown command for every resource.
+One Docker image runs both the REST API (its default command) and the CLI (design decision 10). This page covers building and running it locally, what it needs, what was measured, how to keep it patched, and the deployed API on AWS Lambda: every resource with its creation and teardown command, the deploy script, and rollback.
 
 ## Build
 
