@@ -192,7 +192,7 @@ flowchart LR
 
     linkStyle 0,1,2,3,4,5,6,7 stroke:#2563eb,stroke-width:3px
     linkStyle 10,11 stroke:#ea580c,stroke-width:4px
-    style mac fill:#ffedd5,stroke:#ea580c,stroke-width:2px
+    style mac fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#431407
 ```
 
 **How to read it:** thick blue arrows are **a request** (every call, left to right); orange arrows are **a deploy** (only when you ship a new version, never during a request); dotted arrows happen once at startup or in the background.
