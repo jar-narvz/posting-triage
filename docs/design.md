@@ -112,6 +112,11 @@ The LLM reads, code decides. Each posting passes a cheap liveness check, then an
 4. **Rules in code, profile in config.** Verdict logic is a small, tested Python module; the applicant's facts live in `profile.yaml`, including target role types and role types to exclude (e.g. Data Scientist). *Why:* deterministic, unit-testable, and anyone can run it with their own profile. The LLM extracts role type alongside the other fields; an excluded role type, or any role type outside the target list, is skipped, and an ambiguous one (e.g. "Data & ML Engineer") is flagged. Flag is reserved for uncertainty: a role the tool can name but the applicant doesn't want is a skip. Tracks work the same way: a posting for a term outside the profile's tracks (e.g. a fall internship) is skipped, and a posting that lists several terms matches if any one is in the profile. Every rule runs, and any SKIP beats any FLAG; the deciding field is the first rule, in the labeling guide's order, that gave the winning verdict. *Why:* a flag asks the applicant to judge, and a posting another rule already rules out leaves nothing to judge.
 5. **Liveness first, through the job board's own API where one exists.** Greenhouse, Lever, Ashby, and Workday postings are checked through their job-board endpoints (for Workday, the undocumented JSON endpoint its own job page calls); anything else (Apple and other JavaScript-rendered pages) is opened in a headless browser (Playwright), which only runs on links the APIs can't handle. A 404 from a board API means the posting is gone. Some companies refuse Workday's API (HTTP 403), so any other Workday answer falls back to the browser. *Why:* JavaScript-rendered pages look empty to a plain fetch, and the ~500-character rule alone would call live postings dead. Workday moved from the browser to its API on Oct 26, 2026: on AWS Lambda its pages render empty in Chromium, while its API answers from AWS; the API is also faster and reports removed postings with a clean 404. A page that still can't be read is flagged as "couldn't verify", never marked dead.
 6. **Baseline = the existing rules, as written.** Skip on "Senior", "II", "III", "L4", "Staff", "graduate", "masters", "phd", or "Data Scientist" as a whole word in the title (any case), or a location outside Bay Area, Los Angeles, or Remote. *Why:* it's what a person would write in ten minutes, so beating it is the honest bar. The Data Scientist rule gives the baseline the same role-type preference as the pipeline, so any win comes from reading the posting better. "III" was added after whole-word matching stopped "II" from catching it; the labeling guide already counts III as mid level.
+7. **The API is a thin layer.** The REST API's endpoints call the same functions as the CLI, so no verdict logic lives in the API. The API and `triage run --json` return one shared pydantic schema: `url, verdict, deciding_field, quote, careers_page, detail, model, latency_ms`. *Why:* TODO (Jared).
+8. **Live LLM calls are private.** `POST /triage` requires a bearer token (`TRIAGE_API_TOKEN`, compared in constant time), and the server refuses to start without one. Each token gets 10 requests a minute, a request gives up after 90 s, and at most 2 triages run at once. The public web page stays static, with no live AI calls. *Why:* TODO (Jared). *Alternative:* on Lambda, a shared counter (DynamoDB) or API Gateway throttling instead of the in-memory limiter; kept the in-memory limiter plus a cap of 2 function copies.
+9. **Only public http(s) URLs are fetched.** A URL must be http or https on port 80 or 443, and every address its hostname resolves to must be public; anything else (localhost, private ranges, link-local addresses such as the cloud metadata address 169.254.169.254) is refused with a 400. Every browser connection goes through a filtering proxy that checks each destination and connects to the exact address it checked, which also covers redirects, iframes, page resources, and DNS rebinding. *Why:* TODO (Jared). *Alternative:* a Playwright route guard on each request; replaced by the proxy, which sees connections the guard can't (service workers, WebSockets) and closes DNS rebinding.
+10. **One Docker image runs both the CLI and the API.** Built on Playwright's base image for the pinned Playwright version, running as an unprivileged user, with tini as process 1 and the media libraries Chromium doesn't use removed (the registry's scan went from 337 findings to 0). The Lambda Web Adapter in the image lets the same image run on Lambda unchanged. *Why:* TODO (Jared).
+11. **AWS: Lambda behind a function URL, in one region (us-east-2).** The image lives in ECR (immutable tags, scanned on push); the Anthropic key, the API token, and the profile live in Parameter Store as encrypted SecureStrings, read once at startup with boto3; logs go to CloudWatch for 14 days. The function's role can only read its own parameters and write its logs, and at most 2 copies run at once. Deploys run from the Mac (`scripts/deploy.sh`) with temporary `aws login` credentials, so no long-lived AWS key exists anywhere. *Why:* TODO (Jared). *Alternatives:* App Runner (closed to new customers), ECS Express Mode (about $40 a month) and Lightsail containers ($10–15 a month, secrets only as plain environment variables) for compute; Secrets Manager (about $1 a month, adds rotation) for secrets; GitHub Actions deploying through OIDC, blocked because this account is an AWS Builder ID project whose policy denies identity providers; a stored access key in GitHub, rejected.
 
 ### How each functional requirement is met
 
@@ -154,25 +159,18 @@ posting URL
 
 Only live postings reach the LLM, and the LLM never decides the verdict: it hands fields and quotes to a rules module that reads the applicant's profile.
 
-### Output mockup
+### Output example
 
-A command-line run over a list of postings. Companies and text below are illustrative, not real results.
+Real results from Oct 26, 2026, in the command line's format (long Workday URLs shortened with `…`). Each line is the verdict and the posting's URL; the indented line is the deciding field and the posting's own words (none for APPLY). The S&P Global line is what the deployed API answered on AWS Lambda, where Workday's pages render empty, so it can't verify the posting and flags it instead of guessing.
 
 ```
-$ triage run postings.csv --profile profile.yaml
+$ triage run <GM posting> <TikTok posting> <S&P Global posting>
 
-APPLY  Example Co — Software Engineer, New Grad 2027 (San Francisco)
-       no blocking field
-FLAG   Sample Inc — Backend Engineer I (Remote)
-       experience: "2+ years of experience preferred"
-FLAG   Demo Labs — SWE Intern, Summer 2027 (San Jose)
-       graduation: "must graduate between Dec 2027 and Jun 2028"
-SKIP   Acme AI — ML Engineer Graduate, PhD (Palo Alto)
-       degree: "PhD in Computer Science required"
-DEAD   Foo Corp — Software Engineer I
-       404 on posting; careers page: https://foo.example/careers
-
-5 postings: 1 apply · 2 flag · 1 skip · 1 dead
+FLAG   https://generalmotors.wd5.myworkdayjobs.com/…/2027-Summer-Intern---Machine-Learning-Engineer--AV-AI-Platform_JR-202621695
+       graduation: "Must be graduating between December 2027 and August 2029"
+APPLY  https://lifeattiktok.com/search/7668701361741007109
+FLAG   https://spgi.wd5.myworkdayjobs.com/…/Software-Engineer---Summer-Intern-2027_331717-2
+       couldn't verify (no posting text)
 ```
 
 The eval prints one table: precision and recall on "apply" for the baseline, the direct-verdict prompt, and the pipeline, plus per-field extraction accuracy.
