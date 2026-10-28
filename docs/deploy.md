@@ -33,7 +33,7 @@ Any command given to `docker run` replaces the default one, and still runs under
 |---|---|---|
 | `ANTHROPIC_API_KEY` | (required) | Claude API key |
 | `TRIAGE_API_TOKEN` | (required for the API) | The bearer token for `POST /triage` |
-| `TRIAGE_RATE_LIMIT` | `10` | Requests per minute per token |
+| `TRIAGE_RATE_LIMIT` | `10` | Requests per minute per token, per copy of the function |
 | `TRIAGE_TIMEOUT_S` | `90` | Seconds before `POST /triage` gives up with a 504 |
 | `TRIAGE_PROFILE` | `/app/profile.yaml` | Path to the applicant's profile inside the container |
 | `PORT` | `8080` | Port the API listens on inside the container |
