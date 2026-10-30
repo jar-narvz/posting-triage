@@ -86,6 +86,8 @@ figure.wide {
 }
 figure.wide img { min-width: 1100px; }
 figure.xwide img { min-width: 1800px; }
+figure.demo img { min-width: 0; border-radius: 10px; border: 1px solid var(--line); }
+figure.demo figcaption { max-width: 728px; margin: 8px auto 0; }
 
 .table-wrap { overflow-x: auto; margin: 16px 0; }
 table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
