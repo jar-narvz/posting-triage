@@ -1,29 +1,27 @@
 :root {
-  --bg: #fbfbf9;
-  --text: #1d1d1f;
-  --muted: #5f6368;
-  --line: #e3e3de;
-  --panel: #f2f2ee;
-  --link: #1a5fb4;
+  --bg: #fdfcfa;
+  --text: #1f1f1f;
+  --muted: #61615d;
+  --line: #e4e2dc;
+  --link: #1d4ed8;
   --apply: #1e7a3c;
-  --flag: #a15c00;
+  --flag: #9a5800;
   --skip: #b3261e;
-  --dead: #5f6368;
+  --dead: #61615d;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16171a;
-    --text: #e8e8e6;
-    --muted: #a0a3a8;
-    --line: #2e3035;
-    --panel: #1f2125;
+    --bg: #161616;
+    --text: #e6e5e1;
+    --muted: #a3a29d;
+    --line: #2f2f2d;
     --link: #8ab4f8;
     --apply: #6fcf8f;
     --flag: #f0b45a;
     --skip: #f28b82;
-    --dead: #a0a3a8;
+    --dead: #a3a29d;
   }
 }
 
@@ -33,40 +31,26 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font: 18px/1.65 Charter, "Iowan Old Style", Georgia, serif;
 }
 
 main, footer {
-  max-width: 760px;
+  max-width: 680px;
   margin: 0 auto;
   padding: 0 16px;
 }
 
-header { padding: 56px 0 24px; }
+header { padding: 56px 0 8px; }
 
-h1 { font-size: 2.6rem; line-height: 1.1; margin: 0; }
-h2 { font-size: 1.5rem; margin: 0 0 12px; }
+h1 { font-size: 2.2rem; line-height: 1.15; margin: 0 0 12px; }
+h2 { font-size: 1.35rem; margin: 40px 0 8px; }
 
-section { padding: 32px 0; border-top: 1px solid var(--line); }
+a { color: var(--link); text-underline-offset: 2px; }
 
-a { color: var(--link); }
+.lede { font-size: 1.2rem; margin: 0 0 8px; }
+.meta { color: var(--muted); font-size: 0.95rem; margin: 0; }
 
-.eyebrow { color: var(--muted); font-size: 0.9rem; margin: 0 0 8px; }
-.tagline { font-size: 1.3rem; color: var(--muted); margin: 4px 0 16px; }
-.lede { font-size: 1.15rem; }
-
-.links { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
-.button {
-  display: inline-block;
-  padding: 8px 16px;
-  border-radius: 8px;
-  background: var(--text);
-  color: var(--bg);
-  text-decoration: none;
-  font-weight: 600;
-}
-
-.v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.95em; }
+.v { font: 600 0.8em ui-monospace, SFMono-Regular, Menlo, monospace; }
 .v.apply { color: var(--apply); }
 .v.flag { color: var(--flag); }
 .v.skip { color: var(--skip); }
@@ -74,49 +58,53 @@ a { color: var(--link); }
 
 li { margin-bottom: 8px; }
 
-figure { margin: 20px 0; }
+figure { margin: 24px 0; }
 figure img { display: block; width: 100%; height: auto; }
-/* The Mermaid diagrams are wide: they break out of the text column, and on smaller
-   screens they scroll inside their own box rather than shrinking past readable. */
+figcaption, .note { color: var(--muted); font-size: 0.9rem; }
+figcaption { margin-top: 8px; }
+
+/* The diagrams and the demo are wide: they break out of the text column, and on
+   smaller screens the diagram scrolls inside its own box rather than shrinking past readable. */
 figure.wide {
-  width: min(1200px, 100vw - 32px);
+  width: min(1100px, 100vw - 32px);
   margin-left: 50%;
   transform: translateX(-50%);
   overflow-x: auto;
 }
-figure.wide img { min-width: 1100px; }
-figure.xwide img { min-width: 1800px; }
-figure.demo img { min-width: 0; border-radius: 10px; border: 1px solid var(--line); }
-figure.demo figcaption { max-width: 728px; margin: 8px auto 0; }
+figure.wide img { min-width: 1000px; }
+figure.xwide img { min-width: 1800px; }  /* the architecture diagram is 2,700 px wide */
+figure.demo img { min-width: 0; border-radius: 6px; border: 1px solid var(--line); }
+figure.demo figcaption { max-width: 680px; margin: 8px auto 0; }
 
-.table-wrap { overflow-x: auto; margin: 16px 0; }
-table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
-th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+/* The table is wider than the text column too, so the approach names fit on one line. */
+.table-wrap {
+  width: min(860px, 100vw - 32px);
+  margin: 16px 0 8px 50%;
+  transform: translateX(-50%);
+  overflow-x: auto;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font: 0.78rem/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--line); }
 td { white-space: nowrap; }
 td:first-child { white-space: normal; }
 th { color: var(--muted); font-weight: 600; }
 tr.best td { font-weight: 700; }
 
-.note { color: var(--muted); font-size: 0.9rem; }
-
-.gallery { list-style: none; padding: 0; margin: 16px 0; }
+.gallery { list-style: none; padding: 0; margin: 12px 0; font-size: 0.95rem; }
 .gallery li {
   display: grid;
-  grid-template-columns: 4.5em 1fr;
+  grid-template-columns: 4em 1fr;
   gap: 12px;
-  padding: 10px 0;
+  padding: 8px 0;
   border-bottom: 1px solid var(--line);
   margin: 0;
 }
-.gallery .why { color: var(--muted); font-size: 0.9rem; }
+.gallery .v { padding-top: 3px; }
+.gallery .why { color: var(--muted); }
 
-.callout {
-  background: var(--panel);
-  border-radius: 10px;
-  padding: 4px 20px;
-  margin-top: 20px;
-}
-
-.stack { color: var(--muted); font-size: 0.9rem; }
-
-footer { padding: 24px 16px 48px; color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--line); }
+footer { padding: 24px 16px 48px; margin-top: 40px; color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--line); }
