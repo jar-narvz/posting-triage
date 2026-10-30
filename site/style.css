@@ -97,6 +97,17 @@ tr.best td { font-weight: 700; }
 
 .note { color: var(--muted); font-size: 0.9rem; }
 
+.gallery { list-style: none; padding: 0; margin: 16px 0; }
+.gallery li {
+  display: grid;
+  grid-template-columns: 4.5em 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  margin: 0;
+}
+.gallery .why { color: var(--muted); font-size: 0.9rem; }
+
 .callout {
   background: var(--panel);
   border-radius: 10px;
