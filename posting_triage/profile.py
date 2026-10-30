@@ -116,9 +116,25 @@ def city_first(place):
     return place
 
 
+def readings(place):
+    """The ways one listed place can be read: as written, plus the parts a label or note
+    wraps around it ("HQ (San Francisco, CA)", "HQ: San Francisco, CA", "San Jose (Hybrid)")."""
+    found = [place]
+    if m := re.fullmatch(r"([^()]*)\(([^()]*)\)\s*", place):
+        found += [m.group(1), m.group(2)]
+    if ":" in place:
+        found.append(place.rsplit(":", 1)[1])
+    return [r for r in found if r.strip()]
+
+
 def place_matches(place, wanted):
     """True if one listed place ("Santa Clara, CA", "SF", "Remote in USA") falls in one
-    profile location: a region above, "Remote", or any other name, taken as a city."""
+    profile location: a region above, "Remote", or any other name, taken as a city.
+    Any reading of the place counts (see `readings`)."""
+    return any(_reading_matches(r, wanted) for r in readings(place))
+
+
+def _reading_matches(place, wanted):
     place = city_first(re.sub(r"\s*\+\d+$", "", place.strip())).lower()  # "San Jose, CA +2": the 2 others aren't shown
     wanted = wanted.strip().lower()
     if wanted == "remote":

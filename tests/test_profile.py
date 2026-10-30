@@ -110,6 +110,9 @@ EXAMPLE_PLACES = ("Bay Area", "Los Angeles", "Remote")
         "Remote in USA",
         "Remote (US)",
         "San Francisco Bay Area",
+        "HQ (San Francisco, CA)",  # a real Ashby posting, Oct 29: a label with the place in parentheses
+        "HQ: San Francisco, CA",
+        "San Jose, CA (Hybrid)",
     ],
 )
 def test_places_in_a_profile_region_match(location):
@@ -126,6 +129,9 @@ def test_places_in_a_profile_region_match(location):
         "Bellevue, WA; Austin, TX",
         "USA, WA, Bellevue",
         "",
+        "HQ (New York City, NY)",  # unwrapping a label doesn't make any place match
+        "Office: Seattle, WA",
+        "Austin, TX (Bay Area team)",  # a note isn't a place unless it is one exactly
     ],
 )
 def test_places_outside_every_region_do_not_match(location):
