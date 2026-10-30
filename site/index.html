@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Posting Triage</title>
+  <meta name="description" content="Reads a job posting and answers APPLY, FLAG, SKIP, or DEAD, with a one-line reason quoted from the posting. The LLM reads, code decides.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">Jared Narvaez · personal project · October 2026</p>
+    <h1>Posting Triage</h1>
+    <p class="tagline">The LLM reads, code decides.</p>
+    <p class="lede">Reads a job posting and answers <b class="v apply">APPLY</b>, <b class="v flag">FLAG</b>, <b class="v skip">SKIP</b>, or <b class="v dead">DEAD</b>, with a one-line reason quoted from the posting itself.</p>
+    <p class="links">
+      <a class="button" href="https://github.com/jar-narvz/posting-triage">Code on GitHub</a>
+      <a href="https://github.com/jar-narvz/posting-triage/blob/main/docs/design.md">Design doc</a>
+      <a href="https://github.com/jar-narvz/posting-triage/blob/main/docs/deploy.md">Deploy guide</a>
+    </p>
+  </header>
+
+  <section id="problem">
+    <h2>The problem</h2>
+    <p>Applying to a posting that was never a fit costs a tailored resume, sometimes a cover letter, then often an automatic rejection. Filtering by hand or by keyword falls short in three ways:</p>
+    <ul>
+      <li><b>Keywords miss the fields that matter.</b> Role level, degree, years of experience, graduation window, and location are written in sentences, not titles. "2+ years preferred" is sometimes a real cutoff and sometimes not.</li>
+      <li><b>Dead links waste time.</b> A closed posting can hide a careers page with other roles worth applying to.</li>
+      <li><b>An LLM's verdict alone can't be checked.</b> Asked "should I apply?", a model gives an answer and a reason in its own words, with no way to tell a real reason from an invented one.</li>
+    </ul>
+  </section>
+
+  <section id="how">
+    <h2>How it works</h2>
+    <figure class="wide">
+      <picture>
+        <source srcset="diagrams/pipeline-dark.svg" media="(prefers-color-scheme: dark)">
+        <img src="diagrams/pipeline.svg" alt="Flowchart: posting URL, liveness check (removed → DEAD with careers page; unreadable → FLAG couldn't verify), Claude fills a form with an exact quote per field, code checks every quote is in the posting (if not, even after a retry → FLAG unless a verified field already SKIPs), then rules plus the profile give APPLY, FLAG or SKIP with the deciding quote.">
+      </picture>
+    </figure>
+    <ol>
+      <li><b>Is it live?</b> Greenhouse, Lever, Ashby, and Workday links go through their job-board APIs; anything else opens in headless Chromium (Playwright). A removed posting returns DEAD plus the company's careers page. A page that can't be read is FLAG ("couldn't verify"), never a guessed DEAD.</li>
+      <li><b>Claude fills a form.</b> Role type, level, degree, graduation window, experience, location, and track, each with the exact quote it came from, or null if the posting is silent.</li>
+      <li><b>Code checks every quote.</b> If a quote isn't in the posting, the model gets one retry; if it fails again, that value can't decide anything.</li>
+      <li><b>Rules decide.</b> Plain Python compares the fields with the applicant's profile. Every rule runs, any SKIP beats any FLAG, and the verdict names the deciding field and its quote.</li>
+    </ol>
+  </section>
+
+  <section id="eval">
+    <h2>The eval</h2>
+    <p>Full eval run, Oct 24, 2026: 200 synthetic postings (seed 2027) through the Batch API. Each posting is generated from a target verdict, a deciding field, and a hand-reviewed phrase library, so the right answers are known by construction rather than computed by the rules being tested.</p>
+    <figure>
+      <img src="diagrams/eval-accuracy.svg" alt="Bar chart of accuracy on 200 synthetic postings: keyword baseline 55.5%, direct prompt Haiku 99.5%, Sonnet 94%, Opus 100%; pipeline 100% on Haiku, Sonnet and Opus. Whole-run costs: $0, $0.03, $0.05, $0.17, $0.44, $0.62, $0.97.">
+    </figure>
+    <div class="table-wrap">
+      <table id="eval-table">
+        <thead>
+          <tr><th>Approach</th><th>Apply precision</th><th>Apply recall</th><th>Accuracy</th><th>Right reason</th><th>Cost</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Keyword baseline (no LLM)</td><td>54/98 = 55%</td><td>54/70 = 77%</td><td>111/200 = 56%</td><td>–</td><td>$0</td></tr>
+          <tr><td>Direct prompt · Haiku 5.5</td><td>70/70 = 100%</td><td>70/70 = 100%</td><td>199/200 = 99.5%</td><td>199/200 = 99.5%</td><td>$0.03</td></tr>
+          <tr class="best"><td>Pipeline · Haiku 5.5</td><td>70/70 = 100%</td><td>70/70 = 100%</td><td>200/200 = 100%</td><td>200/200 = 100%</td><td>$0.05</td></tr>
+          <tr><td>Direct prompt · Sonnet 5.5</td><td>67/70 = 96%</td><td>67/70 = 96%</td><td>188/200 = 94%</td><td>187/200 = 94%</td><td>$0.17</td></tr>
+          <tr><td>Pipeline · Sonnet 5.5</td><td>70/70 = 100%</td><td>70/70 = 100%</td><td>200/200 = 100%</td><td>200/200 = 100%</td><td>$0.44</td></tr>
+          <tr><td>Direct prompt · Opus 5.5</td><td>70/70 = 100%</td><td>70/70 = 100%</td><td>200/200 = 100%</td><td>200/200 = 100%</td><td>$0.62</td></tr>
+          <tr><td>Pipeline · Opus 5.5</td><td>70/70 = 100%</td><td>70/70 = 100%</td><td>200/200 = 100%</td><td>200/200 = 100%</td><td>$0.97</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><i>Apply precision:</i> of the postings an approach said to apply to, how many it should have. <i>Right reason:</i> the verdict and the deciding field are both right. <i>Direct prompt:</i> the LLM gives the verdict itself, built only as a comparison. <i>Cost:</i> the whole run, 200 synthetic plus 5 real postings, at batch price.</p>
+    <ul>
+      <li><b>Any LLM approach beats keyword rules:</b> 56% → 94–100%. Keyword rules have no FLAG, so every posting that needed a human look was answered wrong.</li>
+      <li><b>The pipeline scored 100% on every model; the direct prompt depended on the model.</b> Most of Sonnet's direct misses broke the decision order rather than misreading the posting. In the pipeline that order is tested code.</li>
+      <li><b>Haiku is the default:</b> it ties the best score at about 1/20 the cost of Opus.</li>
+    </ul>
+    <div class="callout">
+      <p><b>Why not just ask an LLM?</b> On this benchmark, accuracy alone doesn't justify the pipeline. The case is what accuracy doesn't measure: its reasons are <i>guaranteed</i> to be in the posting (the direct prompt quoted correctly in all 377 of its quoted answers, but nothing checks that), its rules can't drift between models, and a wrong answer points at one misread field you can test and fix.</p>
+      <p><b>How far to trust it:</b> synthetic scores are an upper bound. Only 5 real postings are hand-labeled so far; every LLM approach got all 5 right and the baseline got 3, but all 5 are SKIPs, so they can't measure apply precision.</p>
+    </div>
+  </section>
+
+  <section id="deploy">
+    <h2>Deployment</h2>
+    <figure class="wide xwide">
+      <picture>
+        <source srcset="diagrams/architecture-dark.svg" media="(prefers-color-scheme: dark)">
+        <img src="diagrams/architecture.svg" alt="A client with a bearer token calls a Lambda function URL. Inside the Lambda function, FastAPI checks the token, rate limit, timeout and URL, then the pipeline reads job-board APIs or opens pages in headless Chromium through a filtering proxy, and calls the Claude API. Parameter Store holds the key, token and profile; logs go to CloudWatch; deploys push an image from a Mac to ECR.">
+      </picture>
+    </figure>
+    <p class="note"><a href="diagrams/architecture.svg">Open the architecture diagram full size</a></p>
+    <ul>
+      <li><b>One Docker image</b> runs both the CLI and the FastAPI REST API, as a non-root user. On Lambda, the Lambda Web Adapter turns each request into an ordinary HTTP call.</li>
+      <li><b>AWS Lambda</b> (arm64, 2 GB) behind a function URL; image in ECR; secrets and profile in Parameter Store; logs in CloudWatch; a least-privilege IAM role; a $5 budget alert.</li>
+      <li><b>A patched image:</b> removing Chromium's unused media libraries took the registry's vulnerability scan from 337 findings to 0.</li>
+      <li><b>Deploys</b> run from a Mac with one script and temporary credentials, so no long-lived AWS keys exist anywhere.</li>
+      <li><b>Speed on Lambda:</b> a new copy of the function starts in about 16 s, and its first Chromium posting takes about 30 s; after that, a triage takes about 3–11 s.</li>
+    </ul>
+    <figure class="wide">
+      <picture>
+        <source srcset="diagrams/deploy-dark.svg" media="(prefers-color-scheme: dark)">
+        <img src="diagrams/deploy.svg" alt="Deploy script: pytest, arm64 Docker build, 10-check smoke test, push to ECR, Lambda update pinned to the image digest, then a health check; on failure it stops and prints the rollback command for the previous digest.">
+      </picture>
+    </figure>
+  </section>
+
+  <section id="security">
+    <h2>Security</h2>
+    <p>The API is private: every triage spends money on the Claude key and runs a browser on a server, so this page shows recorded results and makes no live AI calls.</p>
+    <figure class="wide">
+      <picture>
+        <source srcset="diagrams/security-dark.svg" media="(prefers-color-scheme: dark)">
+        <img src="diagrams/security.svg" alt="POST /triage: no valid bearer token → 401; over 10 requests a minute → 429 with Retry-After; URL not public http(s) on ports 80/443 → 400; otherwise triage runs with a 90 s timeout, at most 2 at once, and Chromium traffic goes through a filtering proxy.">
+      </picture>
+    </figure>
+    <ul>
+      <li><b>Bearer token,</b> compared in constant time; the server won't start without one.</li>
+      <li><b>Limits:</b> 10 requests a minute per token in each running copy of the function (up to 2 copies, so 20 a minute at most), a 90 s timeout, and at most 2 triages at once.</li>
+      <li><b>No server-side request forgery:</b> only public http(s) URLs on ports 80/443, with every resolved address checked. Chromium's traffic goes through a filtering proxy that re-checks redirects, iframes, and page resources, so the cloud metadata address (169.254.169.254) gets a 400.</li>
+    </ul>
+  </section>
+
+  <section id="testing">
+    <h2>Testing</h2>
+    <p>1,490+ unit tests (no network, no API calls), 6 headless-browser tests, and a 10-check Docker smoke test. GitHub Actions runs the unit tests on Python 3.11 and 3.13, and builds and smoke-tests the arm64 image, on every push.</p>
+    <p class="stack">Python · Claude API (Haiku, Sonnet, Opus; Batch API) · FastAPI · Pydantic · Playwright · Docker · AWS Lambda · ECR · Parameter Store · CloudWatch · IAM · pytest · GitHub Actions</p>
+  </section>
+</main>
+<footer>
+  <p><a href="https://github.com/jar-narvz/posting-triage">github.com/jar-narvz/posting-triage</a> · MIT license</p>
+</footer>
+</body>
+</html>

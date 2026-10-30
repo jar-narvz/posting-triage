@@ -1,0 +1,109 @@
+:root {
+  --bg: #fbfbf9;
+  --text: #1d1d1f;
+  --muted: #5f6368;
+  --line: #e3e3de;
+  --panel: #f2f2ee;
+  --link: #1a5fb4;
+  --apply: #1e7a3c;
+  --flag: #a15c00;
+  --skip: #b3261e;
+  --dead: #5f6368;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16171a;
+    --text: #e8e8e6;
+    --muted: #a0a3a8;
+    --line: #2e3035;
+    --panel: #1f2125;
+    --link: #8ab4f8;
+    --apply: #6fcf8f;
+    --flag: #f0b45a;
+    --skip: #f28b82;
+    --dead: #a0a3a8;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+main, footer {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+header { padding: 56px 0 24px; }
+
+h1 { font-size: 2.6rem; line-height: 1.1; margin: 0; }
+h2 { font-size: 1.5rem; margin: 0 0 12px; }
+
+section { padding: 32px 0; border-top: 1px solid var(--line); }
+
+a { color: var(--link); }
+
+.eyebrow { color: var(--muted); font-size: 0.9rem; margin: 0 0 8px; }
+.tagline { font-size: 1.3rem; color: var(--muted); margin: 4px 0 16px; }
+.lede { font-size: 1.15rem; }
+
+.links { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+.button {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.95em; }
+.v.apply { color: var(--apply); }
+.v.flag { color: var(--flag); }
+.v.skip { color: var(--skip); }
+.v.dead { color: var(--dead); }
+
+li { margin-bottom: 8px; }
+
+figure { margin: 20px 0; }
+figure img { display: block; width: 100%; height: auto; }
+/* The Mermaid diagrams are wide: they break out of the text column, and on smaller
+   screens they scroll inside their own box rather than shrinking past readable. */
+figure.wide {
+  width: min(1200px, 100vw - 32px);
+  margin-left: 50%;
+  transform: translateX(-50%);
+  overflow-x: auto;
+}
+figure.wide img { min-width: 1100px; }
+figure.xwide img { min-width: 1800px; }
+
+.table-wrap { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+td { white-space: nowrap; }
+td:first-child { white-space: normal; }
+th { color: var(--muted); font-weight: 600; }
+tr.best td { font-weight: 700; }
+
+.note { color: var(--muted); font-size: 0.9rem; }
+
+.callout {
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 4px 20px;
+  margin-top: 20px;
+}
+
+.stack { color: var(--muted); font-size: 0.9rem; }
+
+footer { padding: 24px 16px 48px; color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--line); }
