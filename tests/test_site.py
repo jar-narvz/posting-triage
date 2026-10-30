@@ -1,5 +1,5 @@
-"""The static site's eval table must match the README's, cell for cell, so a number
-can't change in one place and stay stale in the other."""
+"""The static site: its eval table must match the README's, cell for cell, so a number
+can't change in one place and stay stale in the other, and every file it links must exist."""
 
 from html.parser import HTMLParser
 from pathlib import Path
@@ -60,3 +60,24 @@ def test_site_eval_table_matches_readme():
 def test_site_eval_table_is_not_empty():
     # Guards the test above against both parsers finding nothing.
     assert len(site_rows()) == 8
+
+
+class _LocalRefs(HTMLParser):
+    """Collects every href, src and srcset that points at a file next to the page."""
+
+    def __init__(self):
+        super().__init__()
+        self.refs = []
+
+    def handle_starttag(self, tag, attrs):
+        for name, value in attrs:
+            if name in ("href", "src", "srcset") and value and "://" not in value and not value.startswith("#"):
+                self.refs.append(value)
+
+
+def test_every_local_file_the_site_links_exists():
+    parser = _LocalRefs()
+    parser.feed((ROOT / "site" / "index.html").read_text())
+    assert parser.refs, "the page should link its stylesheet, diagrams and demo"
+    missing = [ref for ref in parser.refs if not (ROOT / "site" / ref).is_file()]
+    assert not missing
