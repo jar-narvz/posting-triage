@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="docs/design.md">Design doc</a> · <a href="docs/deploy.md">Deploy guide</a> · <a href="docs/labeling-guide.md">Labeling guide</a>
+  <a href="https://jar-narvz.github.io/posting-triage/">Project page (demo and results)</a> · <a href="docs/design.md">Design doc</a> · <a href="docs/deploy.md">Deploy guide</a> · <a href="docs/labeling-guide.md">Labeling guide</a>
 </p>
 
 Reads a job posting and answers **APPLY**, **FLAG**, **SKIP**, or **DEAD**, with a one-line reason quoted from the posting itself.
@@ -258,7 +258,7 @@ Errors: 401 missing or wrong token, 429 rate limit (with `Retry-After`), 400 a b
 - [Design doc](docs/design.md): the problem, requirements, and the 11 design decisions with their reasons and alternatives.
 - [Deploy guide](docs/deploy.md): Docker, every AWS resource with its creation and teardown command, deploying, rollback, and measurements.
 - [Labeling guide](docs/labeling-guide.md): how real postings are hand-labeled, and the order the rules apply in.
-- **Tests:** `pytest` runs 1,485 unit tests (no network, no API calls); `pytest -m browser` runs 6 with real headless Chromium; `scripts/docker_smoke.sh posting-triage` runs 10 checks on a built image. GitHub Actions runs the unit tests on Python 3.11 and 3.13, and builds and smoke-tests the arm64 image, on every push.
+- **Tests:** `pytest` runs 1,517 unit tests (no network, no API calls); `pytest -m browser` runs 6 with real headless Chromium; `scripts/docker_smoke.sh posting-triage` runs 10 checks on a built image. GitHub Actions runs the unit tests on Python 3.11 and 3.13, and builds and smoke-tests the arm64 image, on every push.
 - **Reproducing the eval:** `python eval/run_eval.py` re-scores a saved run with no API calls; on a fresh checkout, run `triage cache`, then `python eval/run_eval.py --submit` (about $2.30 for all six LLM runs through the Batch API). Raw responses and posting text aren't committed, because they quote real postings.
 
 ## License
